@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>管理面板 · SUSU 量化系统</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f1117; color: #e2e8f0; padding: 32px 16px;
+      max-width: 1200px; margin: 0 auto;
+    }
+    header { text-align: center; margin-bottom: 28px; }
+    header h1 {
+      font-size: 1.8rem; font-weight: 700;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    header p { color: #64748b; margin-top: 8px; font-size: 0.9rem; }
+
+    .card {
+      background: #1e2130; border: 1px solid #2d3148; border-radius: 14px;
+      padding: 20px; margin-bottom: 22px;
+    }
+
+    .summary {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 14px; margin-bottom: 22px;
+    }
+    .metric {
+      background: #0f1117; border: 1px solid #2d3148; border-radius: 10px;
+      padding: 14px; text-align: center;
+    }
+    .metric .label { font-size: 0.8rem; color: #64748b; margin-bottom: 6px; }
+    .metric .value { font-size: 1.8rem; font-weight: 700; color: #38bdf8; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #2d3148; }
+    th { color: #94a3b8; font-weight: 600; font-size: 0.8rem; }
+    tr:hover { background: rgba(56, 189, 248, 0.05); }
+
+    .ip-cell { font-family: monospace; color: #38bdf8; font-weight: 600; }
+    .quota { font-variant-numeric: tabular-nums; }
+    .quota.warn { color: #f59e0b; }
+    .quota.over { color: #f87171; font-weight: 600; }
+    .symbols { color: #94a3b8; font-size: 0.75rem; }
+
+    .controls {
+      display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    button {
+      background: linear-gradient(135deg, #38bdf8, #818cf8); border: none;
+      border-radius: 8px; color: #0f1117; cursor: pointer; font-size: 0.9rem;
+      font-weight: 600; padding: 8px 16px; transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.88; }
+    .auto-refresh { display: flex; gap: 8px; align-items: center; font-size: 0.85rem; }
+    .auto-refresh input { width: 40px; }
+
+    .error { color: #f87171; padding: 12px; background: rgba(248, 113, 113, 0.1);
+      border: 1px solid #f87171; border-radius: 8px; margin-bottom: 14px; }
+    .empty { color: #64748b; text-align: center; padding: 28px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>📊 管理面板</h1>
+    <p>实时监控 AI 分析调用情况</p>
+  </header>
+
+  <div id="errorBox"></div>
+
+  <div class="card">
+    <div class="controls">
+      <button onclick="refresh()">🔄 刷新数据</button>
+      <div class="auto-refresh">
+        <input id="autoRefreshInterval" type="number" value="10" min="5" max="60" />
+        <label for="autoRefreshInterval">秒自动刷新</label>
+        <input id="autoRefreshCheck" type="checkbox" onchange="toggleAutoRefresh()" />
+      </div>
+    </div>
+
+    <div class="summary">
+      <div class="metric">
+        <div class="label">数据日期</div>
+        <div class="value" id="dateDisplay">—</div>
+      </div>
+      <div class="metric">
+        <div class="label">活跃 IP 数</div>
+        <div class="value" id="totalIps">—</div>
+      </div>
+      <div class="metric">
+        <div class="label">单人配额(次)</div>
+        <div class="value" id="limitPerIp">—</div>
+      </div>
+      <div class="metric">
+        <div class="label">最后更新</div>
+        <div class="value" id="lastUpdate" style="font-size:0.95rem;">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-bottom:14px;">📋 今日访问统计</h2>
+    <div id="tableContainer"></div>
+  </div>
+
+  <script src="/auth.js"></script>
+  <script>
+    let autoRefreshTimer = null;
+
+    async function refresh() {
+      try {
+        const res = await fetch("/api/admin/stats");
+        if (!res.ok) {
+          const err = await res.json();
+          showError(err.error || "请求失败");
+          return;
+        }
+        const data = await res.json();
+        renderStats(data);
+      } catch (e) {
+        showError("网络错误：" + e.message);
+      }
+    }
+
+    function showError(msg) {
+      const box = document.getElementById("errorBox");
+      box.innerHTML = `<div class="error">❌ ${msg}</div>`;
+      setTimeout(() => { box.innerHTML = ""; }, 5000);
+    }
+
+    function renderStats(data) {
+      document.getElementById("dateDisplay").textContent = data.date;
+      document.getElementById("totalIps").textContent = data.total_ips;
+      document.getElementById("limitPerIp").textContent = data.limit_per_ip;
+      document.getElementById("lastUpdate").textContent = new Date().toLocaleTimeString("zh-CN");
+
+      const container = document.getElementById("tableContainer");
+      if (!data.stats || data.stats.length === 0) {
+        container.innerHTML = '<div class="empty">暂无数据</div>';
+        return;
+      }
+
+      let html = `<table><thead><tr>
+        <th>访问 IP</th><th>总调用</th><th>配额已用</th><th>剩余配额</th>
+        <th>最后调用</th><th>最近分析的股票</th></tr></thead><tbody>`;
+
+      for (const stat of data.stats) {
+        const warnClass = stat.quota_remaining <= 2 ? "warn" : "";
+        const overClass = stat.quota_remaining === 0 ? "over" : "";
+        const symbolsHtml = stat.symbols.filter(Boolean).join(", ") || "—";
+        html += `<tr>
+          <td class="ip-cell">${stat.ip}</td>
+          <td class="quota">${stat.calls}</td>
+          <td class="quota ${warnClass}">${stat.quota_used}</td>
+          <td class="quota ${overClass}">${stat.quota_remaining}</td>
+          <td>${stat.last_call.slice(11, 19)}</td>
+          <td class="symbols">${symbolsHtml}</td></tr>`;
+      }
+      html += "</tbody></table>";
+      container.innerHTML = html;
+    }
+
+    function toggleAutoRefresh() {
+      const checked = document.getElementById("autoRefreshCheck").checked;
+      if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+      if (checked) {
+        const interval = parseInt(document.getElementById("autoRefreshInterval").value) * 1000;
+        autoRefreshTimer = setInterval(refresh, interval);
+      }
+    }
+
+    // 初始加载
+    refresh();
+  </script>
+</body>
+</html>

@@ -3,7 +3,7 @@ import json
 import queue
 import threading
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 
 import pandas as pd
 from flask import Flask, request, jsonify, Response, stream_with_context
@@ -21,8 +21,8 @@ app = Flask(__name__, static_folder="static", static_url_path="")
 # 市场数据加载较慢(~15s)，按加载窗口缓存复用
 _md_cache: dict = {}
 
-# AI 接口按 IP+日期 计数，超额拒绝，保护通义千问额度
-_ai_calls: dict = defaultdict(int)
+# AI 接口访问日志：{(ip, date_str): [{'time': ..., 'symbol': ..., 'ok': bool}, ...]}
+_ai_log: dict = defaultdict(list)
 
 
 def _client_ip() -> str:
@@ -45,13 +45,31 @@ def _gate():
         return jsonify({"error": "访问口令错误或未提供", "auth_required": True}), 401
 
 
-def _check_ai_quota() -> bool:
-    """返回 True 表示该 IP 今日 AI 配额已用尽。"""
+def _check_ai_quota(symbol: str = "") -> bool:
+    """返回 True 表示该 IP 今日 AI 配额已用尽，同时记录日志。"""
     key = (_client_ip(), date.today().isoformat())
-    if _ai_calls[key] >= config.DAILY_AI_LIMIT_PER_IP:
+    log_entry = {"time": datetime.now().isoformat(), "symbol": symbol}
+
+    if len([e for e in _ai_log[key] if e.get("ok")]) >= config.DAILY_AI_LIMIT_PER_IP:
+        log_entry["ok"] = False
+        _ai_log[key].append(log_entry)
         return True
-    _ai_calls[key] += 1
+
+    log_entry["ok"] = True
+    _ai_log[key].append(log_entry)
     return False
+
+
+def _admin_gate() -> dict | None:
+    """检验管理员密钥，返回 None 表示通过；否则返回错误响应。"""
+    if not config.ADMIN_KEY:
+        return {"error": "管理员功能未启用", "admin_required": True}, 403
+
+    supplied = request.headers.get("X-Admin-Key") or request.args.get("admin_key")
+    if supplied != config.ADMIN_KEY:
+        return {"error": "管理员密钥错误或未提供", "admin_required": True}, 403
+
+    return None
 
 
 def _get_market_data(load_start: str, end: str | None):
@@ -178,17 +196,17 @@ def analyze():
     if not raw:
         return jsonify({"error": "请输入股票代码"}), 400
 
-    # 每 IP 每日 AI 调用上限，保护额度
-    if _check_ai_quota():
-        return jsonify({
-            "error": f"今日 AI 分析次数已达上限（每日 {config.DAILY_AI_LIMIT_PER_IP} 次），请明天再试。"
-        }), 429
-
     try:
         symbol = normalize_symbol(raw)
         info = get_basic_info(symbol)
     except DataError as e:
         return jsonify({"error": str(e)}), 400
+
+    # 每 IP 每日 AI 调用上限，保护额度
+    if _check_ai_quota(symbol):
+        return jsonify({
+            "error": f"今日 AI 分析次数已达上限（每日 {config.DAILY_AI_LIMIT_PER_IP} 次），请明天再试。"
+        }), 429
 
     def generate():
         # 用队列把后台线程里的进度桥接到 SSE 流
@@ -223,6 +241,47 @@ def analyze():
                 yield f"data: {json.dumps({'error': payload})}\n\n"
 
     return Response(stream_with_context(generate()), mimetype="text/event-stream")
+
+
+@app.route("/admin")
+def admin_page():
+    """管理面板页面（需管理员密钥认证）。"""
+    gate = _admin_gate()
+    if gate:
+        return jsonify(gate[0]), gate[1]
+    return app.send_static_file("admin.html")
+
+
+@app.route("/api/admin/stats")
+def admin_stats():
+    """统计数据：今日各 IP 的 AI 调用记录。"""
+    gate = _admin_gate()
+    if gate:
+        return jsonify(gate[0]), gate[1]
+
+    today = date.today().isoformat()
+    stats = []
+    for (ip, day), logs in _ai_log.items():
+        if day != today:
+            continue
+        success = sum(1 for e in logs if e.get("ok"))
+        total = len(logs)
+        last_time = logs[-1]["time"] if logs else ""
+        stats.append({
+            "ip": ip,
+            "calls": total,
+            "quota_used": success,
+            "quota_remaining": max(0, config.DAILY_AI_LIMIT_PER_IP - success),
+            "last_call": last_time,
+            "symbols": [e.get("symbol") for e in logs[:10]],  # 最后 10 次的股票代码
+        })
+
+    return jsonify({
+        "date": today,
+        "total_ips": len(stats),
+        "limit_per_ip": config.DAILY_AI_LIMIT_PER_IP,
+        "stats": sorted(stats, key=lambda x: x["quota_used"], reverse=True),
+    })
 
 
 if __name__ == "__main__":

@@ -33,17 +33,31 @@ if [ -z "${SUSU_DAILY_AI_LIMIT:-}" ]; then
 fi
 export SUSU_DAILY_AI_LIMIT
 
-# ---- 4) 对外模式：关闭 debug，绑定 0.0.0.0 ----
+# ---- 4) 管理员密钥(查看统计、管理面板) ----
+if [ -z "${SUSU_ADMIN_KEY:-}" ]; then
+  read -rp "设一个管理员密钥用于查看统计（直接回车用默认 admin2026）： " _admin
+  SUSU_ADMIN_KEY="${_admin:-admin2026}"
+fi
+export SUSU_ADMIN_KEY
+
+# ---- 5) 对外模式：关闭 debug，绑定 0.0.0.0 ----
 export SUSU_PUBLIC=1
 
 echo "----------------------------------------------------"
 echo "  访问口令      ：${SUSU_ACCESS_PASSWORD}"
 echo "  每日上限      ：${SUSU_DAILY_AI_LIMIT} 次/人"
+echo "  管理员密钥    ：${SUSU_ADMIN_KEY}"
 echo "  本地端口      ：5001"
 echo "----------------------------------------------------"
+echo "  🔗 朋友的使用链接："
+echo "     https://xxxx.ngrok-free.app  (需要先启 ngrok)"
+echo "     口令：${SUSU_ACCESS_PASSWORD}"
+echo ""
+echo "  📊 你的管理面板："
+echo "     http://localhost:5001/admin  (密钥：${SUSU_ADMIN_KEY})"
+echo ""
 echo "  下一步：另开一个终端运行内网穿透，拿到公网链接发给朋友："
-echo "      ngrok http 5001"
-echo "  然后把【公网链接 + 上面的访问口令】一起发给对方即可。"
+echo "     ngrok http 5001"
 echo "===================================================="
 echo
 

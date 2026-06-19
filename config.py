@@ -22,6 +22,10 @@ ACCESS_PASSWORD = os.environ.get("SUSU_ACCESS_PASSWORD")
 # 每个 IP 每天最多触发多少次 AI 分析（最烧钱的接口），超过即拒绝
 DAILY_AI_LIMIT_PER_IP = int(os.environ.get("SUSU_DAILY_AI_LIMIT", "20"))
 
+# 管理员密钥：访问 /api/admin/* 接口需用此钥，跟访问口令分开
+#   设置： export SUSU_ADMIN_KEY=你的管理密钥
+ADMIN_KEY = os.environ.get("SUSU_ADMIN_KEY")
+
 # 非投资建议声明
 DISCLAIMER = (
     "⚠️ 本分析由 AI 生成，仅供研究参考，不构成任何投资建议。"
