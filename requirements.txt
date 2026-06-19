@@ -1,0 +1,5 @@
+dashscope>=1.0.0
+flask>=3.0.0
+# 接真实 A股数据时再装（二选一）：
+# akshare
+# tushare

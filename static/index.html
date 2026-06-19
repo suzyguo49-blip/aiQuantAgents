@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>A股智能研究助手</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 16px 80px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    header h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    header p {
+      color: #64748b;
+      margin-top: 8px;
+      font-size: 0.95rem;
+    }
+
+    .card {
+      background: #1e2130;
+      border: 1px solid #2d3148;
+      border-radius: 16px;
+      padding: 32px;
+      width: 100%;
+      max-width: 720px;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 12px;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      background: #0f1117;
+      border: 1px solid #2d3148;
+      border-radius: 10px;
+      color: #e2e8f0;
+      font-size: 1rem;
+      padding: 12px 16px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input[type="text"]::placeholder { color: #475569; }
+    input[type="text"]:focus { border-color: #38bdf8; }
+
+    button {
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      border: none;
+      border-radius: 10px;
+      color: #0f1117;
+      cursor: pointer;
+      font-size: 0.95rem;
+      font-weight: 600;
+      padding: 12px 24px;
+      transition: opacity 0.2s;
+      white-space: nowrap;
+    }
+
+    button:hover { opacity: 0.88; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .chip {
+      background: #0f1117;
+      border: 1px solid #2d3148;
+      border-radius: 20px;
+      color: #94a3b8;
+      cursor: pointer;
+      font-size: 0.82rem;
+      padding: 4px 14px;
+      transition: border-color 0.2s, color 0.2s;
+    }
+
+    .chip:hover { border-color: #38bdf8; color: #38bdf8; }
+
+    .result-wrap {
+      margin-top: 28px;
+      display: none;
+    }
+
+    .result-wrap.visible { display: block; }
+
+    .status {
+      align-items: center;
+      color: #64748b;
+      display: flex;
+      font-size: 0.88rem;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid #2d3148;
+      border-top-color: #38bdf8;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: none;
+    }
+
+    .spinner.active { display: block; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .steps {
+      list-style: none;
+      margin-bottom: 18px;
+    }
+
+    .steps li {
+      color: #94a3b8;
+      font-size: 0.85rem;
+      padding: 5px 0 5px 22px;
+      position: relative;
+      animation: fadein 0.3s ease;
+    }
+
+    .steps li::before {
+      content: "✓";
+      color: #38bdf8;
+      position: absolute;
+      left: 0;
+    }
+
+    @keyframes fadein { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; } }
+
+    .result-box {
+      background: #0f1117;
+      border: 1px solid #2d3148;
+      border-radius: 12px;
+      padding: 20px 24px;
+      white-space: pre-wrap;
+      line-height: 1.75;
+      font-size: 0.93rem;
+      color: #cbd5e1;
+      min-height: 60px;
+    }
+
+    .disclaimer {
+      color: #f59e0b;
+      font-size: 0.82rem;
+      margin-top: 14px;
+      line-height: 1.6;
+    }
+
+    .error { color: #f87171; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SUSU 的 A股智能研究助手</h1>
+    <p>多 Agent 深度研究 · 通义千问驱动</p>
+    <div style="margin-top:12px;font-size:0.88rem;">
+      <a href="/" style="color:#38bdf8;text-decoration:none;margin:0 10px;">个股 AI 研究</a>
+      <a href="/select" style="color:#64748b;text-decoration:none;margin:0 10px;">选股工作台</a>
+      <a href="/backtest" style="color:#64748b;text-decoration:none;margin:0 10px;">策略回测</a>
+    </div>
+  </header>
+
+  <div class="card">
+    <div class="input-row">
+      <input id="symbolInput" type="text" placeholder="输入股票代码，如 600519" maxlength="10" />
+      <button id="analyzeBtn" onclick="analyze()">开始分析</button>
+    </div>
+    <div class="chips">
+      <span class="chip" onclick="quickFill('600519')">600519 贵州茅台</span>
+      <span class="chip" onclick="quickFill('000001')">000001 平安银行</span>
+      <span class="chip" onclick="quickFill('300750')">300750 宁德时代</span>
+    </div>
+
+    <div class="result-wrap" id="resultWrap">
+      <div class="status">
+        <div class="spinner" id="spinner"></div>
+        <span id="statusText"></span>
+      </div>
+      <ul class="steps" id="steps"></ul>
+      <div class="result-box" id="resultBox"></div>
+      <div class="disclaimer" id="disclaimer"></div>
+    </div>
+  </div>
+
+  <script>
+    const input = document.getElementById("symbolInput");
+    const btn = document.getElementById("analyzeBtn");
+    const wrap = document.getElementById("resultWrap");
+    const spinner = document.getElementById("spinner");
+    const statusText = document.getElementById("statusText");
+    const steps = document.getElementById("steps");
+    const resultBox = document.getElementById("resultBox");
+    const disclaimerEl = document.getElementById("disclaimer");
+
+    function addStep(text) {
+      const li = document.createElement("li");
+      li.textContent = text;
+      steps.appendChild(li);
+    }
+
+    // 极简 markdown：## 标题、**加粗**
+    function renderMarkdown(text) {
+      return text
+        .split("\n")
+        .map(line => {
+          const h = line.match(/^##\s+(.*)/);
+          if (h) return `<strong style="color:#38bdf8;display:block;margin:14px 0 4px;">${h[1]}</strong>`;
+          return line.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+        })
+        .join("\n");
+    }
+
+    input.addEventListener("keydown", e => { if (e.key === "Enter") analyze(); });
+
+    function quickFill(symbol) {
+      input.value = symbol;
+      input.focus();
+    }
+
+    async function analyze() {
+      const symbol = input.value.trim();
+      if (!symbol) { input.focus(); return; }
+
+      btn.disabled = true;
+      wrap.classList.add("visible");
+      spinner.classList.add("active");
+      statusText.textContent = "多 Agent 研究流水线运行中…";
+      steps.innerHTML = "";
+      resultBox.textContent = "";
+      resultBox.className = "result-box";
+      disclaimerEl.textContent = "";
+
+      try {
+        const res = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ symbol }),
+        });
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value);
+          for (const line of chunk.split("\n")) {
+            if (!line.startsWith("data: ")) continue;
+            const payload = JSON.parse(line.slice(6));
+            if (payload.error) {
+              resultBox.textContent = payload.error;
+              resultBox.classList.add("error");
+            } else if (payload.progress) {
+              addStep(payload.progress);
+            } else if (payload.text) {
+              // 把免责声明拆出来单独展示
+              const disclaimerMark = "⚠️";
+              const idx = payload.text.indexOf(disclaimerMark);
+              const body = idx !== -1 ? payload.text.slice(0, idx).trim() : payload.text;
+              resultBox.innerHTML = renderMarkdown(body);
+              if (idx !== -1) disclaimerEl.textContent = payload.text.slice(idx).trim();
+            }
+          }
+        }
+      } catch (err) {
+        resultBox.textContent = "请求失败：" + err.message;
+        resultBox.classList.add("error");
+      } finally {
+        spinner.classList.remove("active");
+        statusText.textContent = "分析完成";
+        btn.disabled = false;
+      }
+    }
+  </script>
+  <script src="/mascot.js"></script>
+</body>
+</html>

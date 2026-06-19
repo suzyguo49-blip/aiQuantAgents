@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>策略回测 · A股量化系统</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f1117; color: #e2e8f0; padding: 32px 16px 80px;
+      max-width: 1080px; margin: 0 auto;
+    }
+    header { text-align: center; margin-bottom: 28px; }
+    header h1 {
+      font-size: 1.8rem; font-weight: 700;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .nav { text-align: center; margin-bottom: 24px; }
+    .nav a { color: #64748b; text-decoration: none; font-size: 0.88rem; margin: 0 10px; }
+    .nav a:hover { color: #38bdf8; }
+    .nav a.active { color: #38bdf8; }
+
+    .controls {
+      background: #1e2130; border: 1px solid #2d3148; border-radius: 14px;
+      padding: 18px 20px; display: flex; flex-wrap: wrap; gap: 16px;
+      align-items: flex-end; margin-bottom: 24px;
+    }
+    .panel {
+      background: #1e2130; border: 1px solid #2d3148; border-radius: 14px;
+      padding: 18px 20px; margin-bottom: 18px;
+    }
+    .panel h2 { font-size: 0.9rem; color: #cbd5e1; margin-bottom: 12px; font-weight: 600; }
+    .factor {
+      display: grid; grid-template-columns: 26px 130px 1fr 50px; align-items: center;
+      gap: 10px; padding: 7px 0; border-bottom: 1px solid #2d3148;
+    }
+    .factor:last-child { border-bottom: none; }
+    .factor input[type=checkbox] { width: 16px; height: 16px; accent-color: #38bdf8; }
+    .factor .fname { font-size: 0.86rem; font-weight: 600; }
+    .factor .fdesc { font-size: 0.72rem; color: #64748b; }
+    .factor input[type=range] { width: 100%; accent-color: #818cf8; }
+    .factor .wval { font-size: 0.82rem; color: #38bdf8; text-align: right; font-variant-numeric: tabular-nums; }
+    .factor.off { opacity: 0.4; }
+    .wsum { font-size: 0.78rem; color: #64748b; margin-top: 10px; }
+    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field label { font-size: 0.74rem; color: #64748b; }
+    .field input {
+      background: #0f1117; border: 1px solid #2d3148; border-radius: 8px;
+      color: #e2e8f0; padding: 8px 10px; font-size: 0.9rem; width: 130px; outline: none;
+    }
+    .field input:focus { border-color: #38bdf8; }
+    .field input.narrow { width: 80px; }
+    button {
+      background: linear-gradient(135deg, #38bdf8, #818cf8); border: none; border-radius: 8px;
+      color: #0f1117; cursor: pointer; font-size: 0.9rem; font-weight: 600;
+      padding: 9px 22px; transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.88; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    button.ghost { background: transparent; border: 1px solid #38bdf8; color: #38bdf8; }
+
+    .status { color: #64748b; font-size: 0.88rem; margin-bottom: 18px; min-height: 20px; }
+    .error { color: #f87171; }
+
+    .metrics {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 12px; margin-bottom: 26px;
+    }
+    .metric {
+      background: #1e2130; border: 1px solid #2d3148; border-radius: 12px;
+      padding: 14px 16px;
+    }
+    .metric .label { font-size: 0.72rem; color: #64748b; margin-bottom: 6px; }
+    .metric .value { font-size: 1.25rem; font-weight: 700; }
+    .pos { color: #4ade80; } .neg { color: #f87171; }
+
+    .card {
+      background: #1e2130; border: 1px solid #2d3148; border-radius: 14px;
+      padding: 20px; margin-bottom: 22px;
+    }
+    .card h2 { font-size: 0.95rem; color: #cbd5e1; margin-bottom: 14px; font-weight: 600; }
+    .chart-wrap { position: relative; height: 300px; }
+    .chart-wrap.short { height: 180px; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #2d3148; }
+    th { color: #64748b; font-weight: 500; font-size: 0.76rem; }
+    .buy { color: #4ade80; } .sell { color: #f87171; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <header><h1>策略回测可视化</h1></header>
+  <div class="nav">
+    <a href="/">个股 AI 研究</a>
+    <a href="/select">选股工作台</a>
+    <a href="/backtest" class="active">策略回测</a>
+  </div>
+
+  <div class="panel">
+    <h2>① 因子与权重</h2>
+    <div id="factorList"></div>
+    <div class="wsum" id="wsum"></div>
+  </div>
+
+  <div class="controls">
+    <div class="field"><label>开始日期</label><input id="start" type="text" value="2025-06-01" /></div>
+    <div class="field"><label>结束日期(留空=最新)</label><input id="end" type="text" value="2026-06-18" /></div>
+    <div class="field"><label>持仓数</label><input id="topk" class="narrow" type="text" value="10" /></div>
+    <div class="field"><label>换仓周期(日)</label><input id="reb" class="narrow" type="text" value="5" /></div>
+    <div class="field"><label>止损(%)</label><input id="stop" class="narrow" type="text" value="10" /></div>
+    <button id="runBtn" onclick="runBacktest()">运行回测</button>
+    <button class="ghost" onclick="sendToSelect()" title="带当前因子权重去选股工作台">📤 用此配置选股</button>
+  </div>
+
+  <div class="status" id="status"></div>
+
+  <div id="results" class="hidden">
+    <div class="metrics" id="metrics"></div>
+
+    <div class="card">
+      <h2>净值曲线（策略 vs 等权全市场基准，归一化到 1.0）</h2>
+      <div class="chart-wrap"><canvas id="equityChart"></canvas></div>
+    </div>
+
+    <div class="card">
+      <h2>回撤曲线（%）</h2>
+      <div class="chart-wrap short"><canvas id="ddChart"></canvas></div>
+    </div>
+
+    <div class="card">
+      <h2>持仓只数随时间变化</h2>
+      <div class="chart-wrap short"><canvas id="holdChart"></canvas></div>
+    </div>
+
+    <div class="card">
+      <h2>期末持仓</h2>
+      <table id="holdingsTable"><thead><tr><th>代码</th><th>名称</th><th>行业</th><th>股数</th></tr></thead><tbody></tbody></table>
+    </div>
+
+    <div class="card">
+      <h2>最近交易（末 30 笔）</h2>
+      <table id="tradesTable"><thead><tr><th>日期</th><th>方向</th><th>名称</th><th>价格</th><th>股数</th><th>原因</th></tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+
+  <script>
+    let equityChart, ddChart, holdChart;
+    let FACTORS = [];
+    const pct = x => (x * 100).toFixed(2) + "%";
+
+    async function loadFactors() {
+      FACTORS = await (await fetch("/api/factors")).json();
+      document.getElementById("factorList").innerHTML = FACTORS.map(f => `
+        <div class="factor" id="row-${f.key}">
+          <input type="checkbox" ${f.default_weight > 0 ? "checked" : ""}
+                 onchange="toggleFactor('${f.key}')" id="chk-${f.key}" />
+          <div><div class="fname">${f.label}</div><div class="fdesc">${f.desc}</div></div>
+          <input type="range" min="0" max="1" step="0.05" value="${f.default_weight}"
+                 id="rng-${f.key}" oninput="onWeight()" />
+          <div class="wval" id="wv-${f.key}">${f.default_weight.toFixed(2)}</div>
+        </div>`).join("");
+      FACTORS.forEach(f => syncRow(f.key));
+      onWeight();
+    }
+    function syncRow(key) {
+      const on = document.getElementById("chk-" + key).checked;
+      document.getElementById("row-" + key).classList.toggle("off", !on);
+      document.getElementById("rng-" + key).disabled = !on;
+    }
+    function toggleFactor(key) { syncRow(key); onWeight(); }
+    function onWeight() {
+      let sum = 0;
+      FACTORS.forEach(f => {
+        const v = parseFloat(document.getElementById("rng-" + f.key).value);
+        document.getElementById("wv-" + f.key).textContent = v.toFixed(2);
+        if (document.getElementById("chk-" + f.key).checked) sum += v;
+      });
+      document.getElementById("wsum").textContent = `启用权重合计 ${sum.toFixed(2)}（后台自动归一）`;
+    }
+    function collectWeights() {
+      const w = {};
+      FACTORS.forEach(f => {
+        if (document.getElementById("chk-" + f.key).checked)
+          w[f.key] = parseFloat(document.getElementById("rng-" + f.key).value);
+      });
+      return w;
+    }
+
+    // 把当前因子权重 + 持仓数带去选股工作台
+    function sendToSelect() {
+      const weights = collectWeights();
+      if (Object.keys(weights).length === 0) {
+        const s = document.getElementById("status");
+        s.className = "status error"; s.textContent = "请至少启用一个因子再同步。"; return;
+      }
+      localStorage.setItem("susu_factor_config", JSON.stringify({
+        weights, top_k: parseInt(document.getElementById("topk").value) || 10,
+      }));
+      window.location.href = "/select";
+    }
+
+    const CHART_BASE = {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      scales: {
+        x: { ticks: { color: "#64748b", maxTicksLimit: 8 }, grid: { color: "#2d3148" } },
+        y: { ticks: { color: "#64748b" }, grid: { color: "#2d3148" } },
+      },
+      plugins: { legend: { labels: { color: "#cbd5e1" } } },
+    };
+
+    async function runBacktest() {
+      const btn = document.getElementById("runBtn");
+      const status = document.getElementById("status");
+      const weights = collectWeights();
+      if (Object.keys(weights).length === 0) {
+        status.className = "status error"; status.textContent = "请至少启用一个因子。"; return;
+      }
+      btn.disabled = true;
+      status.className = "status";
+      status.textContent = "回测运行中…（首次加载市场数据约需 15 秒）";
+
+      const body = {
+        start: document.getElementById("start").value.trim(),
+        end: document.getElementById("end").value.trim() || null,
+        top_k: parseInt(document.getElementById("topk").value) || 10,
+        rebalance_days: parseInt(document.getElementById("reb").value) || 5,
+        stop_loss: (parseFloat(document.getElementById("stop").value) || 10) / 100,
+        weights,
+      };
+
+      try {
+        const res = await fetch("/api/backtest", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (data.error) { status.className = "status error"; status.textContent = "错误：" + data.error; return; }
+        render(data);
+        status.textContent = "回测完成。";
+        document.getElementById("results").classList.remove("hidden");
+      } catch (e) {
+        status.className = "status error"; status.textContent = "请求失败：" + e.message;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function render(d) {
+      renderMetrics(d.metrics);
+      renderEquity(d);
+      renderDrawdown(d);
+      renderHoldings(d);
+      renderTables(d);
+    }
+
+    function renderMetrics(m) {
+      const cls = v => v >= 0 ? "pos" : "neg";
+      const items = [
+        ["累计收益", pct(m.total_return), cls(m.total_return)],
+        ["年化(CAGR)", pct(m.cagr), cls(m.cagr)],
+        ["夏普比率", m.sharpe.toFixed(2), cls(m.sharpe)],
+        ["最大回撤", pct(m.max_drawdown), "neg"],
+        ["Calmar", m.calmar.toFixed(2), cls(m.calmar)],
+        ["基准收益", m.benchmark_return != null ? pct(m.benchmark_return) : "—", cls(m.benchmark_return || 0)],
+        ["超额收益", m.excess_return != null ? pct(m.excess_return) : "—", cls(m.excess_return || 0)],
+      ];
+      document.getElementById("metrics").innerHTML = items.map(([l, v, c]) =>
+        `<div class="metric"><div class="label">${l}</div><div class="value ${c}">${v}</div></div>`).join("");
+    }
+
+    function renderEquity(d) {
+      if (equityChart) equityChart.destroy();
+      equityChart = new Chart(document.getElementById("equityChart"), {
+        type: "line",
+        data: { labels: d.labels, datasets: [
+          { label: "策略", data: d.equity, borderColor: "#38bdf8", backgroundColor: "rgba(56,189,248,0.08)",
+            fill: true, borderWidth: 2, pointRadius: 0, tension: 0.1 },
+          { label: "基准(等权全市场)", data: d.benchmark, borderColor: "#94a3b8",
+            borderWidth: 1.5, pointRadius: 0, borderDash: [5, 4], tension: 0.1 },
+        ]},
+        options: CHART_BASE,
+      });
+    }
+
+    function renderDrawdown(d) {
+      if (ddChart) ddChart.destroy();
+      ddChart = new Chart(document.getElementById("ddChart"), {
+        type: "line",
+        data: { labels: d.labels, datasets: [
+          { label: "回撤", data: d.drawdown, borderColor: "#f87171",
+            backgroundColor: "rgba(248,113,113,0.15)", fill: true, borderWidth: 1.5,
+            pointRadius: 0, tension: 0.1 },
+        ]},
+        options: { ...CHART_BASE, plugins: { legend: { display: false } } },
+      });
+    }
+
+    function renderHoldings(d) {
+      if (holdChart) holdChart.destroy();
+      holdChart = new Chart(document.getElementById("holdChart"), {
+        type: "line",
+        data: { labels: d.labels, datasets: [
+          { label: "持仓只数", data: d.holdings_count, borderColor: "#818cf8",
+            backgroundColor: "rgba(129,140,248,0.1)", fill: true, borderWidth: 1.5,
+            pointRadius: 0, stepped: true },
+        ]},
+        options: { ...CHART_BASE, plugins: { legend: { display: false } } },
+      });
+    }
+
+    function renderTables(d) {
+      document.querySelector("#holdingsTable tbody").innerHTML = d.final_holdings.map(h =>
+        `<tr><td>${h.symbol}</td><td>${h.name}</td><td>${h.industry}</td><td>${h.shares}</td></tr>`).join("")
+        || '<tr><td colspan="4" style="color:#64748b">期末空仓</td></tr>';
+      document.querySelector("#tradesTable tbody").innerHTML = d.recent_trades.slice().reverse().map(t =>
+        `<tr><td>${t.date}</td><td class="${t.side === 'buy' ? 'buy' : 'sell'}">${t.side === 'buy' ? '买入' : '卖出'}</td>`
+        + `<td>${t.name}</td><td>${t.price}</td><td>${t.shares}</td><td>${t.reason === 'stop_loss' ? '止损' : '换仓'}</td></tr>`).join("");
+    }
+
+    loadFactors();
+  </script>
+  <script src="/mascot.js"></script>
+</body>
+</html>

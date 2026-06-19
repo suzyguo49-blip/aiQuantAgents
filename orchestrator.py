@@ -1,0 +1,161 @@
+"""主管 Agent（Orchestrator）—— 多 Agent 研究流水线。
+
+阶段：
+  1. 并行调用各专职分析师（技术/基本面/资金/风控）收集多维结论
+  2. 多空辩论：多头与空头分别基于上述结论对抗论证
+  3. 主管汇总：综合分析师结论 + 多空辩论，给出最终研究观点
+
+新增分析师：在 ANALYSTS 列表里加一个实例即可，会自动并行参与并进入辩论。
+"""
+from __future__ import annotations
+
+from concurrent.futures import ThreadPoolExecutor
+
+from dashscope import Generation
+
+import config
+from data_source import DataError, get_basic_info
+from agents import debate
+from agents.base import BaseAnalyst
+from agents.technical import TechnicalAnalyst
+from agents.fundamental import FundamentalAnalyst
+from agents.capital import CapitalAnalyst
+from agents.risk import RiskAnalyst
+
+# 研究团队成员。要扩团队，在这里加分析师实例即可。
+ANALYSTS: list[BaseAnalyst] = [
+    TechnicalAnalyst(),
+    FundamentalAnalyst(),
+    CapitalAnalyst(),
+    RiskAnalyst(),
+]
+
+CHIEF_SYSTEM = f"""你是一位资深 A股投资研究主管，统筹多位专职分析师与多空辩论。
+基于下方"各维度分析师结论"和"多空辩论"，输出一份结构化研究观点：
+
+## 一、各维度要点
+（技术面 / 基本面 / 资金面 / 风控，每条一句话概括）
+
+## 二、多空交锋
+（多头核心理由 vs 空头核心理由，各一两句）
+
+## 三、综合判断
+（明确给出：偏多 / 偏空 / 中性，并说明权衡逻辑）
+
+## 四、主要风险提示
+（列出最关键的 2-3 条风险）
+
+中文输出，条理清晰。最后必须原样附上以下声明：
+{config.DISCLAIMER}"""
+
+# 交易计划模式：输出次日可执行的买卖点
+CHIEF_TRADING_SYSTEM = f"""你是一位资深 A股交易主管，统筹多位分析师与多空辩论，
+负责把研究结论转化为"次日可执行的交易计划"。基于下方各维度结论和多空辩论，
+**结合技术面给出的最新收盘价、均线、区间高低/支撑压力位**，输出：
+
+## 一、结论速览
+（一句话：明日操作方向——建议买入 / 观望 / 回避，并给出信心强弱）
+
+## 二、次日交易计划
+- **操作建议**：买入 / 观望 / 回避
+- **建议买入区间**：给出具体价格区间（参考支撑位、均线，不要凭空捏造）
+- **止损位**：具体价格（跌破即离场）
+- **目标价/压力位**：具体价格
+- **建议仓位**：轻仓 / 半仓 / 重仓（结合风控结论）
+
+## 三、决策依据
+（2-3 句话说明为何这样定买卖点，引用各分析师与多空的关键论据）
+
+## 四、风险提示
+（列出最关键的 1-2 条风险，及计划失效的信号）
+
+所有价格必须基于技术面给出的真实数据推导，标注"参考价"。中文输出。
+最后必须原样附上以下声明：
+{config.DISCLAIMER}"""
+
+_CHIEF_PROMPTS = {"research": CHIEF_SYSTEM, "trading": CHIEF_TRADING_SYSTEM}
+
+
+def _run_analyst(analyst: BaseAnalyst, symbol: str) -> tuple[str, str]:
+    try:
+        return analyst.name, analyst.analyze(symbol)
+    except Exception as e:  # 单个分析师失败不应拖垮整体
+        return analyst.name, f"（{analyst.name}分析失败：{e}）"
+
+
+def run(user_request: str, symbol: str, progress=None, mode: str = "research") -> str:
+    """运行完整研究流水线。
+
+    user_request: 原始自然语言请求（用于主管措辞参考）
+    symbol: 已解析出的股票代码
+    progress: 可选回调 progress(stage_label) 用于前端展示进度
+    mode: "research"（结构化研究观点）| "trading"（次日买卖点交易计划）
+    """
+    def emit(msg: str) -> None:
+        if progress:
+            progress(msg)
+
+    chief_system = _CHIEF_PROMPTS.get(mode, CHIEF_SYSTEM)
+
+    info = get_basic_info(symbol)
+    name = info["name"]
+
+    # —— 阶段 1：并行跑所有分析师 ——
+    emit(f"调度 {len(ANALYSTS)} 位分析师并行分析 {name}…")
+    with ThreadPoolExecutor(max_workers=len(ANALYSTS)) as pool:
+        results = list(pool.map(lambda a: _run_analyst(a, symbol), ANALYSTS))
+
+    reports_text = "\n\n".join(f"【{n}】\n{text}" for n, text in results)
+
+    # —— 阶段 2：多空辩论 ——
+    emit("多空辩论：多头与空头基于结论对抗论证…")
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        bull_fut = pool.submit(debate.bull_case, symbol, name, reports_text)
+        bear_fut = pool.submit(debate.bear_case, symbol, name, reports_text)
+        bull = bull_fut.result()
+        bear = bear_fut.result()
+
+    debate_text = f"【多头观点】\n{bull}\n\n【空头观点】\n{bear}"
+
+    # —— 阶段 3：主管汇总 ——
+    final_word = "次日交易计划" if mode == "trading" else "最终研究观点"
+    emit(f"研究主管汇总各方观点，形成{final_word}…")
+    resp = Generation.call(
+        model=config.ORCHESTRATOR_MODEL,
+        messages=[
+            {"role": "system", "content": chief_system},
+            {
+                "role": "user",
+                "content": (
+                    f"用户请求：{user_request}\n"
+                    f"标的：{name}（{symbol}） 行业：{info['industry']}\n\n"
+                    f"=== 各维度分析师结论 ===\n{reports_text}\n\n"
+                    f"=== 多空辩论 ===\n{debate_text}\n\n"
+                    f"请汇总成{final_word}。"
+                ),
+            },
+        ],
+        api_key=config.API_KEY,
+        max_tokens=4000,
+    )
+    if resp.status_code == 200:
+        return resp.output.text
+    raise Exception(f"阿里云 API 错误 {resp.status_code}: {resp.message}")
+
+
+if __name__ == "__main__":
+    import sys
+    from data_source import normalize_symbol
+
+    if not config.API_KEY:
+        sys.exit("请先设置环境变量： export DASHSCOPE_API_KEY=sk-ws-...")
+
+    raw = sys.argv[1] if len(sys.argv) > 1 else "600519"
+    try:
+        sym = normalize_symbol(raw)
+    except DataError as e:
+        sys.exit(str(e))
+
+    print(f"\n【请求】分析 {raw}\n")
+    print("【研究观点】\n")
+    print(run(f"帮我分析 {raw}", sym, progress=lambda m: print(f"  · {m}")))

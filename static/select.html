@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>选股工作台 · A股量化系统</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f1117; color: #e2e8f0; padding: 32px 16px 80px;
+      max-width: 1080px; margin: 0 auto;
+    }
+    header { text-align: center; margin-bottom: 22px; }
+    header h1 {
+      font-size: 1.8rem; font-weight: 700;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .nav { text-align: center; margin-bottom: 24px; font-size: 0.88rem; }
+    .nav a { color: #64748b; text-decoration: none; margin: 0 10px; }
+    .nav a:hover, .nav a.active { color: #38bdf8; }
+
+    .card {
+      background: #1e2130; border: 1px solid #2d3148; border-radius: 14px;
+      padding: 20px; margin-bottom: 22px;
+    }
+    .card h2 { font-size: 0.95rem; color: #cbd5e1; margin-bottom: 14px; font-weight: 600; }
+
+    .factor {
+      display: grid; grid-template-columns: 28px 150px 1fr 56px; align-items: center;
+      gap: 12px; padding: 9px 0; border-bottom: 1px solid #2d3148;
+    }
+    .factor:last-child { border-bottom: none; }
+    .factor input[type=checkbox] { width: 17px; height: 17px; accent-color: #38bdf8; }
+    .factor .fname { font-size: 0.9rem; font-weight: 600; }
+    .factor .fdesc { font-size: 0.74rem; color: #64748b; }
+    .factor input[type=range] { width: 100%; accent-color: #818cf8; }
+    .factor .wval { font-size: 0.84rem; color: #38bdf8; text-align: right; font-variant-numeric: tabular-nums; }
+    .factor.off { opacity: 0.4; }
+
+    .toolbar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 16px; }
+    .field { display: flex; flex-direction: column; gap: 4px; }
+    .field label { font-size: 0.74rem; color: #64748b; }
+    .field input {
+      background: #0f1117; border: 1px solid #2d3148; border-radius: 8px;
+      color: #e2e8f0; padding: 8px 10px; font-size: 0.9rem; width: 90px; outline: none;
+    }
+    .field input:focus { border-color: #38bdf8; }
+    .wsum { font-size: 0.8rem; color: #64748b; }
+    button {
+      background: linear-gradient(135deg, #38bdf8, #818cf8); border: none; border-radius: 8px;
+      color: #0f1117; cursor: pointer; font-size: 0.9rem; font-weight: 600;
+      padding: 9px 22px; transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.88; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    button.ghost { background: transparent; border: 1px solid #38bdf8; color: #38bdf8; padding: 5px 12px; font-size: 0.78rem; }
+
+    .status { color: #64748b; font-size: 0.88rem; margin: 8px 0 16px; min-height: 18px; }
+    .error { color: #f87171; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+    th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid #2d3148; white-space: nowrap; }
+    th { color: #64748b; font-weight: 500; font-size: 0.74rem; }
+    td.score { color: #38bdf8; font-weight: 600; }
+    .fcell { font-variant-numeric: tabular-nums; }
+    .fpos { color: #4ade80; } .fneg { color: #f87171; } .fnan { color: #475569; }
+    .hidden { display: none; }
+
+    .plan {
+      margin-top: 10px; background: #0f1117; border: 1px solid #2d3148;
+      border-radius: 10px; padding: 14px 18px; white-space: pre-wrap;
+      line-height: 1.7; font-size: 0.9rem; color: #cbd5e1;
+    }
+    .plan strong { color: #38bdf8; }
+    .plan .dim { color: #64748b; }
+    .steps { list-style: none; font-size: 0.8rem; color: #94a3b8; margin: 6px 0; }
+    .steps li { padding: 2px 0 2px 18px; position: relative; }
+    .steps li::before { content: "✓"; color: #38bdf8; position: absolute; left: 0; }
+  </style>
+</head>
+<body>
+  <header><h1>选股工作台</h1></header>
+  <div class="nav">
+    <a href="/">个股 AI 研究</a>
+    <a href="/select" class="active">选股工作台</a>
+    <a href="/backtest">策略回测</a>
+  </div>
+
+  <div class="card">
+    <h2>① 选择因子 & 调整权重</h2>
+    <div id="factorList"></div>
+    <div class="toolbar">
+      <div class="field"><label>选前 N 只</label><input id="topk" type="text" value="10" /></div>
+      <div class="field"><label>信号日(留空=最新)</label><input id="asof" type="text" placeholder="2026-06-18" /></div>
+      <span class="wsum" id="wsum"></span>
+      <button id="selBtn" onclick="runSelect()">开始选股</button>
+    </div>
+  </div>
+
+  <div class="status" id="status"></div>
+
+  <div class="card hidden" id="resultCard">
+    <h2 id="resultTitle">② 选股结果</h2>
+    <div style="overflow-x:auto;">
+      <table id="picksTable">
+        <thead><tr id="picksHead"></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p style="font-size:0.76rem;color:#64748b;margin-top:10px;">
+      因子列为横截面 z 分（越高越强）。点"AI 交易计划"由多 Agent 团队给出次日买卖点。
+    </p>
+  </div>
+
+  <script>
+    let FACTORS = [];
+
+    async function loadFactors() {
+      FACTORS = await (await fetch("/api/factors")).json();
+      const html = FACTORS.map(f => `
+        <div class="factor" id="row-${f.key}">
+          <input type="checkbox" ${f.default_weight > 0 ? "checked" : ""}
+                 onchange="toggleFactor('${f.key}')" id="chk-${f.key}" />
+          <div><div class="fname">${f.label}</div><div class="fdesc">${f.desc}</div></div>
+          <input type="range" min="0" max="1" step="0.05" value="${f.default_weight}"
+                 id="rng-${f.key}" oninput="onWeight()" />
+          <div class="wval" id="wv-${f.key}">${f.default_weight.toFixed(2)}</div>
+        </div>`).join("");
+      document.getElementById("factorList").innerHTML = html;
+      FACTORS.forEach(f => syncRow(f.key));
+      applyImportedConfig();
+      onWeight();
+    }
+
+    // 若从回测页带来了因子配置，应用到本页控件
+    function applyImportedConfig() {
+      const raw = localStorage.getItem("susu_factor_config");
+      if (!raw) return;
+      localStorage.removeItem("susu_factor_config");
+      try {
+        const cfg = JSON.parse(raw);
+        const weights = cfg.weights || {};
+        FACTORS.forEach(f => {
+          const on = f.key in weights;
+          document.getElementById("chk-" + f.key).checked = on;
+          if (on) document.getElementById("rng-" + f.key).value = weights[f.key];
+          syncRow(f.key);
+        });
+        if (cfg.top_k) document.getElementById("topk").value = cfg.top_k;
+        const s = document.getElementById("status");
+        s.className = "status";
+        s.textContent = "已载入回测页的因子配置，点「开始选股」即可用同一套权重选股。";
+      } catch (e) { /* 忽略损坏的配置 */ }
+    }
+
+    function syncRow(key) {
+      const on = document.getElementById("chk-" + key).checked;
+      document.getElementById("row-" + key).classList.toggle("off", !on);
+      document.getElementById("rng-" + key).disabled = !on;
+    }
+    function toggleFactor(key) { syncRow(key); onWeight(); }
+
+    function collectWeights() {
+      const w = {};
+      FACTORS.forEach(f => {
+        if (document.getElementById("chk-" + f.key).checked)
+          w[f.key] = parseFloat(document.getElementById("rng-" + f.key).value);
+      });
+      return w;
+    }
+
+    function onWeight() {
+      let sum = 0;
+      FACTORS.forEach(f => {
+        const v = parseFloat(document.getElementById("rng-" + f.key).value);
+        document.getElementById("wv-" + f.key).textContent = v.toFixed(2);
+        if (document.getElementById("chk-" + f.key).checked) sum += v;
+      });
+      document.getElementById("wsum").textContent = `启用权重合计 ${sum.toFixed(2)}（无需归一，后台自动归一）`;
+    }
+
+    async function runSelect() {
+      const btn = document.getElementById("selBtn");
+      const status = document.getElementById("status");
+      const weights = collectWeights();
+      if (Object.keys(weights).length === 0) {
+        status.className = "status error"; status.textContent = "请至少启用一个因子。"; return;
+      }
+      btn.disabled = true;
+      status.className = "status";
+      status.textContent = "选股计算中…（首次加载市场数据约 15 秒）";
+
+      const body = {
+        weights,
+        top_k: parseInt(document.getElementById("topk").value) || 10,
+        as_of: document.getElementById("asof").value.trim() || null,
+      };
+      try {
+        const data = await (await fetch("/api/select", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        })).json();
+        if (data.error) { status.className = "status error"; status.textContent = "错误：" + data.error; return; }
+        renderPicks(data);
+        status.textContent = `选股完成，信号日 ${data.as_of}，共 ${data.picks.length} 只。`;
+      } catch (e) {
+        status.className = "status error"; status.textContent = "请求失败：" + e.message;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function fcell(v) {
+      if (v == null) return '<span class="fnan">—</span>';
+      const cls = v > 0 ? "fpos" : v < 0 ? "fneg" : "";
+      return `<span class="${cls}">${v > 0 ? "+" : ""}${v.toFixed(2)}</span>`;
+    }
+
+    function renderPicks(d) {
+      const fkeys = d.factor_keys;
+      const labelOf = k => (FACTORS.find(f => f.key === k) || {}).label || k;
+      document.getElementById("picksHead").innerHTML =
+        `<th>#</th><th>代码</th><th>名称</th><th>行业</th><th>综合分</th><th>现价</th>`
+        + fkeys.map(k => `<th class="fcell">${labelOf(k)}</th>`).join("")
+        + `<th></th>`;
+      const rows = d.picks.map((p, i) => `
+        <tr>
+          <td>${i + 1}</td><td>${p.symbol}</td><td>${p.name}</td><td>${p.industry}</td>
+          <td class="score">${p.score.toFixed(2)}</td><td>${p.close}</td>
+          ${fkeys.map(k => `<td class="fcell">${fcell(p.factors[k])}</td>`).join("")}
+          <td><button class="ghost" onclick="tradePlan('${p.symbol}','${p.name}',this)">AI 交易计划</button></td>
+        </tr>
+        <tr id="plan-${p.symbol.replace('.', '_')}" class="hidden"><td colspan="${7 + fkeys.length}"></td></tr>
+      `).join("");
+      document.querySelector("#picksTable tbody").innerHTML = rows;
+      document.getElementById("resultCard").classList.remove("hidden");
+    }
+
+    // 极简 markdown
+    function renderMd(text) {
+      return text.split("\n").map(line => {
+        const h = line.match(/^##\s+(.*)/);
+        if (h) return `<strong>${h[1]}</strong>`;
+        return line.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+      }).join("\n");
+    }
+
+    async function tradePlan(symbol, name, btn) {
+      const rowId = "plan-" + symbol.replace(".", "_");
+      const planRow = document.getElementById(rowId);
+      const cell = planRow.querySelector("td");
+      planRow.classList.remove("hidden");
+      btn.disabled = true;
+      cell.innerHTML = `<ul class="steps" id="steps-${rowId}"></ul><div class="plan dim">AI 团队分析中…</div>`;
+      const stepsEl = document.getElementById("steps-" + rowId);
+      const planEl = cell.querySelector(".plan");
+
+      try {
+        const res = await fetch("/api/analyze", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ symbol, mode: "trading" }),
+        });
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          for (const line of decoder.decode(value).split("\n")) {
+            if (!line.startsWith("data: ")) continue;
+            const p = JSON.parse(line.slice(6));
+            if (p.error) { planEl.className = "plan"; planEl.innerHTML = "分析失败：" + p.error; }
+            else if (p.progress) { const li = document.createElement("li"); li.textContent = p.progress; stepsEl.appendChild(li); }
+            else if (p.text) { planEl.className = "plan"; planEl.innerHTML = renderMd(p.text); }
+          }
+        }
+      } catch (e) {
+        planEl.className = "plan"; planEl.textContent = "请求失败：" + e.message;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    loadFactors();
+  </script>
+  <script src="/mascot.js"></script>
+</body>
+</html>
