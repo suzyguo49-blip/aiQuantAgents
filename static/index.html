@@ -175,6 +175,56 @@
     }
 
     .error { color: #f87171; }
+
+    /* ===== 研究团队介绍 ===== */
+    .team {
+      width: 100%;
+      max-width: 720px;
+      margin-top: 28px;
+    }
+    .team h2 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .team .sub { color: #64748b; font-size: 0.85rem; margin-bottom: 18px; }
+
+    .layer { margin-bottom: 22px; }
+    .layer-title {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 0.82rem; color: #94a3b8; font-weight: 600;
+      margin-bottom: 12px;
+    }
+    .layer-title .badge {
+      background: #1e2130; border: 1px solid #2d3148; border-radius: 6px;
+      color: #38bdf8; font-size: 0.72rem; padding: 2px 8px;
+    }
+    .layer-title .line { flex: 1; height: 1px; background: #2d3148; }
+
+    .agent-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 560px) { .agent-grid { grid-template-columns: 1fr; } }
+
+    .agent {
+      background: #1e2130; border: 1px solid #2d3148; border-radius: 12px;
+      padding: 14px 16px; transition: border-color 0.2s, transform 0.2s;
+    }
+    .agent:hover { border-color: #38bdf8; transform: translateY(-2px); }
+    .agent .head { display: flex; align-items: center; gap: 9px; margin-bottom: 6px; }
+    .agent .icon { font-size: 1.2rem; }
+    .agent .name { font-size: 0.92rem; font-weight: 600; color: #e2e8f0; }
+    .agent .role { font-size: 0.79rem; color: #94a3b8; line-height: 1.55; }
+    .agent .data { font-size: 0.72rem; color: #64748b; margin-top: 7px; }
+    .agent .data b { color: #818cf8; font-weight: 500; }
+
+    .flow {
+      background: #0f1117; border: 1px dashed #2d3148; border-radius: 12px;
+      padding: 14px 18px; color: #94a3b8; font-size: 0.82rem; line-height: 1.7;
+      text-align: center;
+    }
+    .flow b { color: #38bdf8; font-weight: 600; }
+    .flow .arrow { color: #475569; margin: 0 6px; }
   </style>
 </head>
 <body>
@@ -209,6 +259,72 @@
       <div class="disclaimer" id="disclaimer"></div>
     </div>
   </div>
+
+  <section class="team">
+    <h2>研究团队 · 7 位 AI Agent 协作</h2>
+    <div class="sub">输入代码后，下面这支团队会分三层协作，最终给出研究观点或次日交易计划。</div>
+
+    <div class="layer">
+      <div class="layer-title"><span class="badge">第一层</span>四位专职分析师 · 并行出具结论<span class="line"></span></div>
+      <div class="agent-grid">
+        <div class="agent">
+          <div class="head"><span class="icon">🔧</span><span class="name">技术面分析师</span></div>
+          <div class="role">研判趋势方向、关键支撑压力位、均线形态与量价配合。</div>
+          <div class="data">看数据：<b>20日K线 · MA5/10/20 · 量价 · 区间高低</b></div>
+        </div>
+        <div class="agent">
+          <div class="head"><span class="icon">📊</span><span class="name">基本面分析师</span></div>
+          <div class="role">判断估值贵贱、所处历史分位，捕捉业绩改善信号。</div>
+          <div class="data">看数据：<b>PE/PB/PS · 股息率 · 估值历史分位</b></div>
+        </div>
+        <div class="agent">
+          <div class="head"><span class="icon">💰</span><span class="name">资金面分析师</span></div>
+          <div class="role">观察资金活跃度，研判主力是在流入还是流出。</div>
+          <div class="data">看数据：<b>换手率 · 量比 · 成交额趋势</b></div>
+        </div>
+        <div class="agent">
+          <div class="head"><span class="icon">⚠️</span><span class="name">风控分析师</span></div>
+          <div class="role">给决策“踩刹车”，排查硬性风险，立场偏保守。</div>
+          <div class="data">看数据：<b>ST状态 · 估值极值 · 连续下跌</b></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="layer">
+      <div class="layer-title"><span class="badge">第二层</span>多空辩论 · 基于结论对抗论证<span class="line"></span></div>
+      <div class="agent-grid">
+        <div class="agent">
+          <div class="head"><span class="icon">🐂</span><span class="name">多头分析师</span></div>
+          <div class="role">找出所有支持上涨的证据，给出最乐观但站得住脚的逻辑。</div>
+          <div class="data">规则：<b>只基于已有结论推演，不捏造数据</b></div>
+        </div>
+        <div class="agent">
+          <div class="head"><span class="icon">🐻</span><span class="name">空头分析师</span></div>
+          <div class="role">挑出所有风险与瑕疵，给出最审慎的回避逻辑。</div>
+          <div class="data">规则：<b>只基于已有结论推演，不捏造数据</b></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="layer">
+      <div class="layer-title"><span class="badge">第三层</span>研究主管 · 综合汇总<span class="line"></span></div>
+      <div class="agent-grid">
+        <div class="agent">
+          <div class="head"><span class="icon">🎯</span><span class="name">研究主管（研究模式）</span></div>
+          <div class="role">综合四方结论与多空交锋，给出偏多 / 偏空 / 中性的结构化研究观点。</div>
+        </div>
+        <div class="agent">
+          <div class="head"><span class="icon">🧭</span><span class="name">交易主管（交易模式）</span></div>
+          <div class="role">把研究结论转成次日可执行计划：买入区间、止损位、目标价、仓位。</div>
+          <div class="data">入口：<b>选股工作台 → AI 交易计划</b></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flow">
+      <b>四分析师并行</b><span class="arrow">→</span>汇成结论<span class="arrow">→</span><b>多空并行辩论</b><span class="arrow">→</span><b>主管综合</b><span class="arrow">→</span>研究观点 / 交易计划
+    </div>
+  </section>
 
   <script>
     const input = document.getElementById("symbolInput");
