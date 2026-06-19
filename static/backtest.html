@@ -264,9 +264,14 @@
       const items = [
         ["累计收益", pct(m.total_return), cls(m.total_return)],
         ["年化(CAGR)", pct(m.cagr), cls(m.cagr)],
+        ["年化波动", pct(m.ann_vol), "neg"],
         ["夏普比率", m.sharpe.toFixed(2), cls(m.sharpe)],
+        ["Sortino比率", (m.sortino || 0).toFixed(2), cls(m.sortino || 0)],
         ["最大回撤", pct(m.max_drawdown), "neg"],
+        ["回撤恢复", (m.max_dd_recovery_days ? m.max_dd_recovery_days + " 天" : "—"), ""],
         ["Calmar", m.calmar.toFixed(2), cls(m.calmar)],
+        ["日胜率", pct(m.win_rate_daily || 0), cls(m.win_rate_daily || 0)],
+        ["月胜率", pct(m.win_rate_monthly || 0), cls(m.win_rate_monthly || 0)],
         ["基准收益", m.benchmark_return != null ? pct(m.benchmark_return) : "—", cls(m.benchmark_return || 0)],
         ["超额收益", m.excess_return != null ? pct(m.excess_return) : "—", cls(m.excess_return || 0)],
       ];
