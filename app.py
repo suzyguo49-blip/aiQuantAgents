@@ -2,6 +2,8 @@
 import json
 import queue
 import threading
+from collections import defaultdict
+from datetime import date
 
 import pandas as pd
 from flask import Flask, request, jsonify, Response, stream_with_context
@@ -18,6 +20,38 @@ app = Flask(__name__, static_folder="static", static_url_path="")
 
 # 市场数据加载较慢(~15s)，按加载窗口缓存复用
 _md_cache: dict = {}
+
+# AI 接口按 IP+日期 计数，超额拒绝，保护通义千问额度
+_ai_calls: dict = defaultdict(int)
+
+
+def _client_ip() -> str:
+    """取真实客户端 IP（内网穿透/反代后真实 IP 在 X-Forwarded-For）。"""
+    fwd = request.headers.get("X-Forwarded-For", "")
+    return fwd.split(",")[0].strip() if fwd else (request.remote_addr or "unknown")
+
+
+@app.before_request
+def _gate():
+    """对所有 /api/ 接口做访问密码校验（未设密码则放行，本地自用不受影响）。"""
+    if not config.ACCESS_PASSWORD:
+        return
+    if not request.path.startswith("/api/"):
+        return
+    if request.path == "/api/auth_status":  # 门禁状态查询本身放行
+        return
+    supplied = request.headers.get("X-Access-Password") or request.args.get("pw")
+    if supplied != config.ACCESS_PASSWORD:
+        return jsonify({"error": "访问口令错误或未提供", "auth_required": True}), 401
+
+
+def _check_ai_quota() -> bool:
+    """返回 True 表示该 IP 今日 AI 配额已用尽。"""
+    key = (_client_ip(), date.today().isoformat())
+    if _ai_calls[key] >= config.DAILY_AI_LIMIT_PER_IP:
+        return True
+    _ai_calls[key] += 1
+    return False
 
 
 def _get_market_data(load_start: str, end: str | None):
@@ -40,6 +74,15 @@ def backtest_page():
 @app.route("/select")
 def select_page():
     return app.send_static_file("select.html")
+
+
+@app.route("/api/auth_status")
+def auth_status():
+    """前端用来判断是否需要口令、已存口令是否有效（不泄露口令本身）。"""
+    required = bool(config.ACCESS_PASSWORD)
+    supplied = request.headers.get("X-Access-Password") or request.args.get("pw")
+    ok = (not required) or (supplied == config.ACCESS_PASSWORD)
+    return jsonify({"required": required, "ok": ok})
 
 
 @app.route("/api/factors")
@@ -135,6 +178,12 @@ def analyze():
     if not raw:
         return jsonify({"error": "请输入股票代码"}), 400
 
+    # 每 IP 每日 AI 调用上限，保护额度
+    if _check_ai_quota():
+        return jsonify({
+            "error": f"今日 AI 分析次数已达上限（每日 {config.DAILY_AI_LIMIT_PER_IP} 次），请明天再试。"
+        }), 429
+
     try:
         symbol = normalize_symbol(raw)
         info = get_basic_info(symbol)
@@ -177,7 +226,17 @@ def analyze():
 
 
 if __name__ == "__main__":
+    import os
+    import sys
+
     if not config.API_KEY:
-        import sys
         sys.exit("请先设置环境变量： export DASHSCOPE_API_KEY=sk-ws-...")
-    app.run(debug=True, port=5001, threaded=True)
+
+    # 对外开放时设 SUSU_PUBLIC=1：关闭 debug（debug 模式可被远程执行代码）
+    public = os.environ.get("SUSU_PUBLIC") == "1"
+    if public and not config.ACCESS_PASSWORD:
+        print("⚠️ 警告：已对外开放但未设访问口令，任何人都能消耗你的 AI 额度！")
+        print("   建议先： export SUSU_ACCESS_PASSWORD=你的口令")
+    print(f"启动模式：{'对外开放(debug 关闭)' if public else '本地开发(debug 开启)'}  "
+          f"门禁：{'已开启' if config.ACCESS_PASSWORD else '未开启'}")
+    app.run(host="0.0.0.0", port=5001, debug=not public, threaded=True)
