@@ -7,8 +7,10 @@
   const KEY = "susu_admin_key";
   const origFetch = window.fetch.bind(window);   // 此时已是 auth.js 包装过的 fetch
 
+  // 对所有 /api/ 请求都附带管理员密钥（非受保护接口会忽略它，无害），
+  // 并在 403 时弹窗——这样新增的管理员接口不会再漏。
   function isOwnerApi(url) {
-    return url.indexOf("/api/admin/") !== -1 || url.indexOf("/api/portfolio") !== -1;
+    return url.indexOf("/api/") !== -1;
   }
 
   function withKey(init, input) {

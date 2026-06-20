@@ -18,6 +18,17 @@ from quant.backtest import Backtester
 from quant import factors
 
 app = Flask(__name__, static_folder="static", static_url_path="")
+# 前端 JS/HTML 频繁迭代（且常经 ngrok 分享），关掉静态文件缓存，避免浏览器用旧版
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+
+
+@app.after_request
+def _no_cache_assets(resp):
+    p = request.path
+    if p == "/" or p.endswith((".js", ".html")):
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
+
 
 # 市场数据加载较慢(~15s)，按加载窗口缓存复用
 _md_cache: dict = {}
