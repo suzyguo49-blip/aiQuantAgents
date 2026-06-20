@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>今日策略 · SUSU 量化系统</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f1117; color: #e2e8f0; padding: 32px 16px 80px;
+      max-width: 980px; margin: 0 auto;
+    }
+    header { text-align: center; margin-bottom: 22px; }
+    header h1 {
+      font-size: 1.8rem; font-weight: 700;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .nav { text-align: center; margin-bottom: 24px; font-size: 0.88rem; }
+    .nav a { color: #64748b; text-decoration: none; margin: 0 10px; }
+    .nav a:hover, .nav a.active { color: #38bdf8; }
+
+    .card {
+      background: #1e2130; border: 1px solid #2d3148; border-radius: 14px;
+      padding: 20px; margin-bottom: 22px;
+    }
+    .card h2 { font-size: 0.95rem; color: #cbd5e1; margin-bottom: 6px; font-weight: 600; }
+    .card .hint { font-size: 0.76rem; color: #64748b; margin-bottom: 14px; line-height: 1.6; }
+
+    .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 16px; max-width: 240px; }
+    .field label { font-size: 0.76rem; color: #64748b; }
+    input[type=text], input[type=number] {
+      background: #0f1117; border: 1px solid #2d3148; border-radius: 8px;
+      color: #e2e8f0; padding: 8px 10px; font-size: 0.9rem; outline: none;
+    }
+    input:focus { border-color: #38bdf8; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid #2d3148; }
+    th { color: #64748b; font-weight: 500; font-size: 0.74rem; }
+    td input { width: 100%; }
+    td.name { color: #94a3b8; font-size: 0.8rem; }
+    .delrow {
+      background: transparent; border: 1px solid #f87171; color: #f87171;
+      border-radius: 6px; cursor: pointer; font-size: 0.75rem; padding: 3px 9px;
+    }
+
+    button {
+      background: linear-gradient(135deg, #38bdf8, #818cf8); border: none; border-radius: 8px;
+      color: #0f1117; cursor: pointer; font-size: 0.9rem; font-weight: 600;
+      padding: 9px 20px; transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.88; }
+    button:disabled { opacity: 0.35; cursor: not-allowed; }
+    button.ghost { background: transparent; border: 1px solid #38bdf8; color: #38bdf8; }
+
+    .toolbar { display: flex; gap: 12px; align-items: center; margin-top: 14px; flex-wrap: wrap; }
+    .status { color: #64748b; font-size: 0.85rem; min-height: 18px; }
+    .status.ok { color: #4ade80; } .status.error { color: #f87171; }
+
+    /* 预览：未启用的 AI 统筹卡片 */
+    .preview { position: relative; opacity: 0.72; }
+    .preview .soon {
+      position: absolute; top: 14px; right: 16px; font-size: 0.72rem;
+      color: #f59e0b; border: 1px solid #f59e0b; border-radius: 20px; padding: 2px 12px;
+    }
+    .switches { display: flex; gap: 18px; flex-wrap: wrap; margin: 6px 0 14px; }
+    .switch { display: flex; align-items: center; gap: 7px; font-size: 0.84rem; color: #cbd5e1; }
+    .switch input { width: 16px; height: 16px; accent-color: #818cf8; }
+    .switch .base { color: #64748b; }
+    .fidelity { font-size: 0.78rem; color: #64748b; }
+    .fidelity b { color: #38bdf8; }
+  </style>
+  <script src="/auth.js"></script>
+  <script src="/owner.js"></script>
+</head>
+<body>
+  <header><h1>📌 今日策略</h1></header>
+  <div class="nav">
+    <a href="/">个股 AI 研究</a>
+    <a href="/select">选股工作台</a>
+    <a href="/backtest">策略回测</a>
+    <a href="/today" class="active">今日策略</a>
+    <a href="/admin">管理面板</a>
+  </div>
+
+  <div class="card">
+    <h2>① 录入你的真实持仓与现金</h2>
+    <div class="hint">
+      这些数据只存在本机(<code>portfolio.json</code>，已隔离不入库)，是后续「AI 今日统筹」的输入。
+      成本价可留空。截图自动识别将在下一步加入，现在先手动录入。
+    </div>
+
+    <div class="field">
+      <label>可用现金（元）</label>
+      <input id="cash" type="number" min="0" step="0.01" placeholder="如 100000" />
+    </div>
+
+    <table id="holdTable">
+      <thead><tr>
+        <th style="width:30%">股票代码</th><th style="width:22%">股数</th>
+        <th style="width:22%">成本价(可空)</th><th>名称</th><th style="width:60px"></th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+
+    <div class="toolbar">
+      <button class="ghost" onclick="addRow()">+ 添加一行</button>
+      <button onclick="savePortfolio()">💾 保存持仓</button>
+      <span class="status" id="status"></span>
+    </div>
+  </div>
+
+  <div class="card preview">
+    <span class="soon">下一步接入</span>
+    <h2>② AI 今日统筹</h2>
+    <div class="hint">
+      读取上面你的真实持仓 + 现金 + 选股候选，由交易主管统筹出今日调仓方案（加/减/清/建仓）。
+      信息开放度由下面三个开关控制——量化为基底常开，研报与舆情可独立叠加，组合越“重”回测可信度越低。
+    </div>
+    <div class="switches">
+      <label class="switch"><input type="checkbox" checked disabled /> <span class="base">🧮 量化基底（常开）</span></label>
+      <label class="switch"><input type="checkbox" disabled /> 📄 研报</label>
+      <label class="switch"><input type="checkbox" disabled /> 📰 舆情</label>
+    </div>
+    <div class="fidelity">当前组合：纯量化 · 回测可信度 <b>高</b></div>
+    <div class="toolbar">
+      <button disabled>🚀 生成今日统筹方案</button>
+    </div>
+  </div>
+
+  <script>
+    const tbody = document.querySelector("#holdTable tbody");
+
+    function addRow(h = {}) {
+      const tr = document.createElement("tr");
+      tr.innerHTML =
+        `<td><input type="text" class="c-sym" placeholder="600519" value="${h.symbol || ""}"></td>` +
+        `<td><input type="number" class="c-sh" min="0" step="100" placeholder="100" value="${h.shares || ""}"></td>` +
+        `<td><input type="number" class="c-cost" min="0" step="0.01" placeholder="可空" value="${h.cost != null ? h.cost : ""}"></td>` +
+        `<td class="name">${h.name || ""}</td>` +
+        `<td><button class="delrow" onclick="this.closest('tr').remove()">删除</button></td>`;
+      tbody.appendChild(tr);
+    }
+
+    function setStatus(msg, kind = "") {
+      const el = document.getElementById("status");
+      el.className = "status " + kind;
+      el.textContent = msg;
+    }
+
+    async function loadPortfolio() {
+      try {
+        const res = await fetch("/api/portfolio");
+        if (!res.ok) { setStatus("加载持仓需要管理员密钥", "error"); return; }
+        const pf = await res.json();
+        document.getElementById("cash").value = pf.cash || "";
+        tbody.innerHTML = "";
+        (pf.holdings || []).forEach(addRow);
+        if (!pf.holdings || pf.holdings.length === 0) addRow();
+        if (pf.updated_at) setStatus("已载入上次保存（" + pf.updated_at.replace("T", " ") + "）", "ok");
+      } catch (e) { setStatus("加载失败：" + e.message, "error"); }
+    }
+
+    async function savePortfolio() {
+      const holdings = [...tbody.querySelectorAll("tr")].map(tr => ({
+        symbol: tr.querySelector(".c-sym").value.trim(),
+        shares: tr.querySelector(".c-sh").value,
+        cost: tr.querySelector(".c-cost").value,
+      })).filter(h => h.symbol);
+
+      const body = { cash: document.getElementById("cash").value || 0, holdings };
+      setStatus("保存中…");
+      try {
+        const res = await fetch("/api/portfolio", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) { setStatus("保存失败：" + (data.error || res.status), "error"); return; }
+        setStatus("✅ 已保存 " + data.holdings.length + " 只持仓，现金 " +
+          Number(data.cash).toLocaleString("zh-CN") + " 元", "ok");
+        loadPortfolio();   // 重新拉取以补上名称
+      } catch (e) { setStatus("请求失败：" + e.message, "error"); }
+    }
+
+    loadPortfolio();
+  </script>
+</body>
+</html>

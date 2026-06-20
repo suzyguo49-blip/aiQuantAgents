@@ -10,6 +10,7 @@ from flask import Flask, request, jsonify, Response, stream_with_context
 
 import config
 import orchestrator
+import portfolio_store
 from data_source import DataError, normalize_symbol, get_basic_info
 from quant.market_data import load_market_data
 from quant.strategy import Strategy
@@ -245,11 +246,42 @@ def analyze():
 
 @app.route("/admin")
 def admin_page():
-    """管理面板页面（需管理员密钥认证）。"""
+    """管理面板页面。页面本身公开放行；数据接口 /api/admin/* 才校验管理员密钥
+    （前端 owner.js 负责带上 X-Admin-Key）。"""
+    return app.send_static_file("admin.html")
+
+
+@app.route("/today")
+def today_page():
+    """实盘"今日"页面：录入真实持仓 + 现金，后续接 AI 统筹。
+    同样页面放行、数据接口 /api/portfolio 校验管理员密钥。"""
+    return app.send_static_file("today.html")
+
+
+@app.route("/api/portfolio", methods=["GET", "POST"])
+def portfolio_api():
+    """读取/保存用户真实持仓（需管理员密钥，属个人财务数据）。"""
     gate = _admin_gate()
     if gate:
         return jsonify(gate[0]), gate[1]
-    return app.send_static_file("admin.html")
+
+    if request.method == "POST":
+        data = request.get_json() or {}
+        try:
+            saved = portfolio_store.save_portfolio(
+                data.get("cash", 0), data.get("holdings", []))
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        return jsonify(saved)
+
+    # GET：读取并尽力补上股票名称，便于核对
+    pf = portfolio_store.load_portfolio()
+    for h in pf.get("holdings", []):
+        try:
+            h["name"] = get_basic_info(h["symbol"])["name"]
+        except Exception:
+            h["name"] = ""
+    return jsonify(pf)
 
 
 @app.route("/api/admin/stats")

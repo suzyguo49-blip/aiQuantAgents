@@ -16,6 +16,9 @@ secret*
 *.sqlite
 *.sqlite3
 
+# 用户真实持仓（个人财务数据，绝不入库）
+portfolio.json
+
 # 本地 Claude Code 设置
 .claude/settings.local.json
 
