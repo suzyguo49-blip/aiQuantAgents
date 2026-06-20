@@ -12,6 +12,7 @@ import config
 import orchestrator
 import orders as orders_mod
 import portfolio_store
+import journal_store
 from data_source import DataError, normalize_symbol, get_basic_info
 from quant.market_data import load_market_data
 from quant.strategy import Strategy, AIStrategy
@@ -331,6 +332,69 @@ def portfolio_ocr():
         return jsonify({"error": f"识别失败：{e}"}), 500
 
 
+@app.route("/journal")
+def journal_page():
+    return app.send_static_file("journal.html")
+
+
+@app.route("/api/journal", methods=["GET"])
+def journal_get():
+    """周记全量：权重日志 + 快照 + 周战绩 + 当前生效权重（需管理员密钥）。"""
+    gate = _admin_gate()
+    if gate:
+        return jsonify(gate[0]), gate[1]
+    j = journal_store.load_journal()
+    return jsonify({
+        "weight_log": j["weight_log"],
+        "snapshots": j["snapshots"],
+        "weekly": journal_store.weekly_performance(),
+        "current_weights": journal_store.current_weights(),
+    })
+
+
+@app.route("/api/journal/weights", methods=["POST"])
+def journal_save_weights():
+    """保存本周因子权重（需管理员密钥）。"""
+    gate = _admin_gate()
+    if gate:
+        return jsonify(gate[0]), gate[1]
+    data = request.get_json() or {}
+    try:
+        return jsonify(journal_store.save_weights(data.get("weights") or {}, data.get("note", "")))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/journal/snapshot", methods=["POST"])
+def journal_save_snapshot():
+    """记录某日总资产快照（需管理员密钥）。"""
+    gate = _admin_gate()
+    if gate:
+        return jsonify(gate[0]), gate[1]
+    data = request.get_json() or {}
+    try:
+        return jsonify(journal_store.add_snapshot(
+            data.get("total_asset"), data.get("note", ""), data.get("date") or None))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/journal/snapshot/ocr", methods=["POST"])
+def journal_snapshot_ocr():
+    """截图识别总资产（需管理员密钥）。只返回识别结果供确认，不直接保存。"""
+    gate = _admin_gate()
+    if gate:
+        return jsonify(gate[0]), gate[1]
+    data = request.get_json() or {}
+    if not data.get("image"):
+        return jsonify({"error": "未收到图片"}), 400
+    try:
+        import vision_ocr
+        return jsonify(vision_ocr.extract_account_summary(data["image"]))
+    except Exception as e:
+        return jsonify({"error": f"识别失败：{e}"}), 500
+
+
 @app.route("/api/today/plan", methods=["POST"])
 def today_plan():
     """实盘今日：用真实持仓 + 现金 + 选股候选，由 AI 统筹出仓位方案（需管理员密钥）。"""
@@ -346,8 +410,8 @@ def today_plan():
     pf = portfolio_store.load_portfolio()
     cash = float(pf.get("cash") or 0)
     top_k = int(data.get("top_k", 10))
-    # 留空=用因子库默认权重选股
-    weights = data.get("weights") or {
+    # 权重优先级：请求传入 > 周记里存的本周组合 > 因子库默认
+    weights = data.get("weights") or journal_store.current_weights() or {
         k: v["default_weight"]
         for k, v in factors.FACTOR_LIBRARY.items() if v["default_weight"] > 0
     }

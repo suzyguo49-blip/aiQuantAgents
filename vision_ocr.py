@@ -44,17 +44,17 @@ def _strip_json(text: str) -> dict:
     return json.loads(t)
 
 
-def extract_holdings(image_data_url: str) -> dict:
-    """image_data_url: 形如 'data:image/png;base64,xxxx' 的图片。
+_SUMMARY_PROMPT = """这是券商 App 的资产/持仓截图。只提取账户总资产相关数字：
+- 总资产 / 总市值 / 资产总值（人民币元，去掉千分位逗号）
+- 可用资金 / 可用余额（如有）
+只输出 JSON：{"total_asset": 数字或null, "cash": 数字或null}。看不清填 null，绝不编造。"""
 
-    返回 {"cash": 数字|None, "holdings": [{"symbol","shares","cost"}...]}。
-    symbol 这里仅做 6 位数字提取，规范化(加 sh./sz.)留到保存时由 portfolio_store 做。
-    """
+
+def _call_vl(image_data_url: str, prompt: str) -> str:
+    """把图片送 qwen-vl-max，返回模型文本。"""
     if "," in image_data_url and image_data_url.strip().startswith("data:"):
         header, b64 = image_data_url.split(",", 1)
-        ext = "png"
-        if "jpeg" in header or "jpg" in header:
-            ext = "jpg"
+        ext = "jpg" if ("jpeg" in header or "jpg" in header) else "png"
     else:
         b64, ext = image_data_url, "png"
 
@@ -68,7 +68,7 @@ def extract_holdings(image_data_url: str) -> dict:
             api_key=config.API_KEY,
             messages=[{
                 "role": "user",
-                "content": [{"image": f"file://{path}"}, {"text": _PROMPT}],
+                "content": [{"image": f"file://{path}"}, {"text": prompt}],
             }],
         )
     finally:
@@ -76,11 +76,27 @@ def extract_holdings(image_data_url: str) -> dict:
 
     if resp.status_code != 200:
         raise Exception(f"视觉模型错误 {resp.status_code}: {resp.message}")
-
-    # 多模态返回 content 是 [{'text': ...}] 列表
     content = resp.output.choices[0].message.content
-    text = content[0]["text"] if isinstance(content, list) else str(content)
+    return content[0]["text"] if isinstance(content, list) else str(content)
 
+
+def extract_account_summary(image_data_url: str) -> dict:
+    """从截图读账户总资产/可用资金，供周记快照。返回 {"total_asset","cash"}。"""
+    text = _call_vl(image_data_url, _SUMMARY_PROMPT)
+    try:
+        parsed = _strip_json(text)
+    except (json.JSONDecodeError, IndexError) as e:
+        raise Exception(f"识别结果解析失败（模型未返回合法 JSON）：{e}")
+    return {"total_asset": parsed.get("total_asset"), "cash": parsed.get("cash")}
+
+
+def extract_holdings(image_data_url: str) -> dict:
+    """image_data_url: 形如 'data:image/png;base64,xxxx' 的图片。
+
+    返回 {"cash": 数字|None, "holdings": [{"symbol","shares","cost"}...]}。
+    symbol 这里仅做 6 位数字提取，规范化(加 sh./sz.)留到保存时由 portfolio_store 做。
+    """
+    text = _call_vl(image_data_url, _PROMPT)
     try:
         parsed = _strip_json(text)
     except (json.JSONDecodeError, IndexError) as e:

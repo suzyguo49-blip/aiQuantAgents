@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>实盘周记 · SUSU 量化系统</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f1117; color: #e2e8f0; padding: 32px 16px 80px; max-width: 1040px; margin: 0 auto; }
+    header { text-align: center; margin-bottom: 22px; }
+    header h1 { font-size: 1.8rem; font-weight: 700;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .nav { text-align: center; margin-bottom: 24px; font-size: 0.88rem; }
+    .nav a { color: #64748b; text-decoration: none; margin: 0 10px; }
+    .nav a:hover, .nav a.active { color: #38bdf8; }
+    .card { background: #1e2130; border: 1px solid #2d3148; border-radius: 14px; padding: 20px; margin-bottom: 22px; }
+    .card h2 { font-size: 0.95rem; color: #cbd5e1; margin-bottom: 6px; font-weight: 600; }
+    .card .hint { font-size: 0.76rem; color: #64748b; margin-bottom: 14px; line-height: 1.6; }
+
+    .factor { display: grid; grid-template-columns: 26px 140px 1fr 50px; align-items: center;
+      gap: 10px; padding: 7px 0; border-bottom: 1px solid #2d3148; }
+    .factor:last-child { border-bottom: none; }
+    .factor input[type=checkbox] { width: 16px; height: 16px; accent-color: #38bdf8; }
+    .factor .fname { font-size: 0.86rem; font-weight: 600; }
+    .factor .fdesc { font-size: 0.72rem; color: #64748b; }
+    .factor input[type=range] { width: 100%; accent-color: #818cf8; }
+    .factor .wval { font-size: 0.82rem; color: #38bdf8; text-align: right; font-variant-numeric: tabular-nums; }
+    .factor.off { opacity: 0.4; }
+
+    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field label { font-size: 0.74rem; color: #64748b; }
+    input[type=text], input[type=number] { background: #0f1117; border: 1px solid #2d3148;
+      border-radius: 8px; color: #e2e8f0; padding: 8px 10px; font-size: 0.9rem; outline: none; }
+    input:focus { border-color: #38bdf8; }
+    .toolbar { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-top: 14px; }
+    button { background: linear-gradient(135deg, #38bdf8, #818cf8); border: none; border-radius: 8px;
+      color: #0f1117; cursor: pointer; font-size: 0.9rem; font-weight: 600; padding: 9px 18px; }
+    button:hover { opacity: 0.88; } button:disabled { opacity: 0.4; cursor: not-allowed; }
+    button.ghost { background: transparent; border: 1px solid #38bdf8; color: #38bdf8; }
+    .status { color: #64748b; font-size: 0.85rem; min-height: 18px; }
+    .status.ok { color: #4ade80; } .status.error { color: #f87171; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #2d3148; white-space: nowrap; }
+    th { color: #64748b; font-weight: 500; font-size: 0.74rem; }
+    .pos { color: #4ade80; font-weight: 600; } .neg { color: #f87171; font-weight: 600; }
+    .wtags { font-size: 0.76rem; color: #94a3b8; white-space: normal; }
+    .empty { color: #64748b; text-align: center; padding: 18px; font-size: 0.85rem; }
+  </style>
+  <script src="/auth.js"></script>
+  <script src="/owner.js"></script>
+</head>
+<body>
+  <header><h1>📓 实盘周记</h1></header>
+  <div class="nav">
+    <a href="/">个股 AI 研究</a><a href="/select">选股工作台</a><a href="/backtest">策略回测</a>
+    <a href="/today">今日策略</a><a href="/journal" class="active">实盘周记</a><a href="/admin">管理面板</a>
+  </div>
+
+  <!-- ① 本周因子权重 -->
+  <div class="card">
+    <h2>① 本周因子组合</h2>
+    <div class="hint">
+      建议先在 <a href="/backtest" style="color:#38bdf8;">策略回测</a> 验证哪组权重历史表现好，再来这里定本周组合。
+      保存后，<b>今日策略会自动用这组权重</b>（重开服务也在）。同一天重复保存覆盖当天。
+    </div>
+    <div id="factorList"></div>
+    <div class="toolbar">
+      <div class="field"><label>备注（可选）</label><input id="wnote" type="text" placeholder="如：本周追半导体" style="width:220px"></div>
+      <button onclick="saveWeights()">💾 保存为本周组合</button>
+      <span class="status" id="wstatus"></span>
+    </div>
+  </div>
+
+  <!-- ② 总资产快照 -->
+  <div class="card">
+    <h2>② 记录今日总资产</h2>
+    <div class="hint">
+      上传券商 App 截图自动读「总资产」，或手动填。每天记一次，周末就能算出本周战绩。
+      <b>口径：整个账户的真实总资产</b>（含一切持仓）。⚠️ 入金/出金会扭曲收益，可在备注注明。
+    </div>
+    <div class="toolbar">
+      <div class="field"><label>日期</label><input id="snapDate" type="text" placeholder="YYYY-MM-DD（空=今天）" style="width:160px"></div>
+      <div class="field"><label>总资产（元）</label><input id="snapAsset" type="number" min="0" step="0.01" placeholder="如 1320000" style="width:160px"></div>
+      <div class="field"><label>备注</label><input id="snapNote" type="text" placeholder="如：转入5万" style="width:160px"></div>
+      <button class="ghost" onclick="document.getElementById('snapShot').click()">📷 截图识别</button>
+      <input type="file" id="snapShot" accept="image/*" style="display:none" onchange="ocrSnap(this)">
+      <button onclick="saveSnap()">💾 记录快照</button>
+      <span class="status" id="sstatus"></span>
+    </div>
+  </div>
+
+  <!-- ③ 周记表 -->
+  <div class="card">
+    <h2>③ 每周战绩 × 因子组合</h2>
+    <div class="hint">
+      ⚠️ 这是<b>整个账户的真实结果</b>（含你的实际操作、ETF/港股等），是实盘复盘日记，<b>不是因子组合的干净归因</b>——干净归因看回测。
+    </div>
+    <div id="weeklyTable"></div>
+  </div>
+
+  <script>
+    let FACTORS = [];
+
+    async function loadFactors() {
+      FACTORS = await (await fetch("/api/factors")).json();
+      document.getElementById("factorList").innerHTML = FACTORS.map(f => `
+        <div class="factor" id="row-${f.key}">
+          <input type="checkbox" onchange="syncRow('${f.key}');onWeight()" id="chk-${f.key}" />
+          <div><div class="fname">${f.label}</div><div class="fdesc">${f.desc}</div></div>
+          <input type="range" min="0" max="1" step="0.05" value="${f.default_weight}" id="rng-${f.key}" oninput="onWeight()" />
+          <div class="wval" id="wv-${f.key}">${f.default_weight.toFixed(2)}</div>
+        </div>`).join("");
+    }
+
+    function syncRow(k) {
+      const on = document.getElementById("chk-" + k).checked;
+      document.getElementById("row-" + k).classList.toggle("off", !on);
+      document.getElementById("rng-" + k).disabled = !on;
+    }
+    function onWeight() {
+      FACTORS.forEach(f => {
+        document.getElementById("wv-" + f.key).textContent =
+          parseFloat(document.getElementById("rng-" + f.key).value).toFixed(2);
+      });
+    }
+    function applyWeights(weights) {
+      FACTORS.forEach(f => {
+        const on = weights && (f.key in weights);
+        document.getElementById("chk-" + f.key).checked = !!on;
+        if (on) document.getElementById("rng-" + f.key).value = weights[f.key];
+        else document.getElementById("chk-" + f.key).checked = f.default_weight > 0;
+        if (!on && f.default_weight > 0) document.getElementById("rng-" + f.key).value = f.default_weight;
+        syncRow(f.key);
+      });
+      onWeight();
+    }
+    function collectWeights() {
+      const w = {};
+      FACTORS.forEach(f => {
+        if (document.getElementById("chk-" + f.key).checked)
+          w[f.key] = parseFloat(document.getElementById("rng-" + f.key).value);
+      });
+      return w;
+    }
+
+    async function saveWeights() {
+      const w = collectWeights();
+      const st = document.getElementById("wstatus");
+      if (Object.keys(w).length === 0) { st.className = "status error"; st.textContent = "至少选一个因子"; return; }
+      st.className = "status"; st.textContent = "保存中…";
+      const res = await fetch("/api/journal/weights", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ weights: w, note: document.getElementById("wnote").value }),
+      });
+      const d = await res.json();
+      if (!res.ok) { st.className = "status error"; st.textContent = "失败：" + (d.error || res.status); return; }
+      st.className = "status ok"; st.textContent = "✅ 已存为本周组合，今日策略将自动使用";
+      loadJournal();
+    }
+
+    function ocrSnap(inp) {
+      const file = inp.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const st = document.getElementById("sstatus");
+        st.className = "status"; st.textContent = "📷 识别总资产中…";
+        try {
+          const res = await fetch("/api/journal/snapshot/ocr", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ image: reader.result }),
+          });
+          const d = await res.json();
+          if (!res.ok) { st.className = "status error"; st.textContent = "识别失败：" + (d.error || res.status); return; }
+          if (d.total_asset != null) document.getElementById("snapAsset").value = d.total_asset;
+          st.className = "status ok"; st.textContent = "✅ 已识别总资产 " + (d.total_asset || "?") + "，请核对后点记录";
+        } catch (e) { st.className = "status error"; st.textContent = "请求失败：" + e.message; }
+        finally { inp.value = ""; }
+      };
+      reader.readAsDataURL(file);
+    }
+
+    async function saveSnap() {
+      const st = document.getElementById("sstatus");
+      const asset = document.getElementById("snapAsset").value;
+      if (!asset) { st.className = "status error"; st.textContent = "请填总资产"; return; }
+      st.className = "status"; st.textContent = "记录中…";
+      const res = await fetch("/api/journal/snapshot", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          total_asset: asset, date: document.getElementById("snapDate").value.trim() || null,
+          note: document.getElementById("snapNote").value,
+        }),
+      });
+      const d = await res.json();
+      if (!res.ok) { st.className = "status error"; st.textContent = "失败：" + (d.error || res.status); return; }
+      st.className = "status ok"; st.textContent = "✅ 已记录 " + d.date + " 总资产 " + d.total_asset.toLocaleString("zh-CN");
+      loadJournal();
+    }
+
+    function wtags(weights) {
+      if (!weights) return "—";
+      const labelOf = k => (FACTORS.find(f => f.key === k) || {}).label || k;
+      return Object.entries(weights).map(([k, v]) => `${labelOf(k)} ${v}`).join(" · ");
+    }
+
+    async function loadJournal() {
+      let d;
+      try {
+        const res = await fetch("/api/journal");
+        if (!res.ok) return;   // 未输管理员密钥时 owner.js 会弹窗
+        d = await res.json();
+      } catch (e) { return; }
+      if (d.current_weights) applyWeights(d.current_weights);
+
+      const wk = d.weekly || [];
+      const el = document.getElementById("weeklyTable");
+      if (wk.length === 0) { el.innerHTML = '<div class="empty">还没有数据。先记录至少两天的总资产，周末就能看到战绩。</div>'; return; }
+      el.innerHTML = `<table><thead><tr>
+        <th>周</th><th>周初总资产</th><th>周末总资产</th><th>本周收益</th><th>本周因子组合</th><th>记录天数</th>
+        </tr></thead><tbody>${wk.map(w => `<tr>
+          <td>${w.week}</td>
+          <td>${w.start_asset.toLocaleString("zh-CN")}</td>
+          <td>${w.end_asset.toLocaleString("zh-CN")}</td>
+          <td class="${w.return_pct >= 0 ? "pos" : "neg"}">${w.return_pct >= 0 ? "+" : ""}${w.return_pct}%</td>
+          <td class="wtags">${wtags(w.weights)}</td>
+          <td>${w.n_snapshots}</td></tr>`).join("")}</tbody></table>`;
+    }
+
+    (async () => { await loadFactors(); loadJournal(); })();
+  </script>
+</body>
+</html>
