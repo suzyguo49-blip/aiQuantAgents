@@ -43,6 +43,7 @@
     .act-清仓, .act-减仓, .act-止损 { color: #b91c1c; font-weight: 600; }
   </style>
   <script src="/auth.js"></script>
+  <script src="/owner.js"></script>
 </head>
 <body>
   <main class="wrap">
@@ -77,6 +78,7 @@
     </label>
     <button id="runBtn" onclick="runBacktest()">运行回测</button>
     <button class="ghost" onclick="sendToSelect()" title="带当前因子权重去选股工作台">📤 用此配置选股</button>
+    <button class="ghost" onclick="saveAsWeekly()" title="把当前因子权重存为本周组合，今日策略将自动使用">📌 存为本周组合</button>
   </div>
 
   <div class="status" id="status"></div>
@@ -168,6 +170,28 @@
         weights, top_k: parseInt(document.getElementById("topk").value) || 10,
       }));
       window.location.href = "/select";
+    }
+
+    // 把当前因子权重存为「本周组合」（今日策略会自动采用），存好可跳转
+    async function saveAsWeekly() {
+      const weights = collectWeights();
+      const s = document.getElementById("status");
+      if (Object.keys(weights).length === 0) {
+        s.className = "status error"; s.textContent = "请至少启用一个因子再保存。"; return;
+      }
+      s.className = "status"; s.textContent = "保存本周组合中…（需管理员密钥）";
+      try {
+        const res = await fetch("/api/journal/weights", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ weights, note: "来自策略回测" }),
+        });
+        const d = await res.json();
+        if (!res.ok) { s.className = "status error"; s.textContent = "保存失败：" + (d.error || res.status); return; }
+        s.className = "status"; s.textContent = "✅ 已存为本周组合，今日策略将自动使用这组权重。";
+        if (confirm("已存为本周组合！\n今日策略会自动用这组因子权重。\n\n现在去「今日策略」生成方案吗？")) {
+          window.location.href = "/today";
+        }
+      } catch (e) { s.className = "status error"; s.textContent = "请求失败：" + e.message; }
     }
 
     const CHART_BASE = {

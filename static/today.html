@@ -274,6 +274,7 @@
       document.getElementById("planResult").innerHTML = `
         <div class="plan-head">
           <span class="chip">模式 <b>${d.mode}</b></span>
+          <span class="chip">因子 <b>${d.weights_source || "默认"}</b></span>
           <span class="chip">回测可信度 <b>${d.fidelity}</b></span>
           <span class="chip">总体风格 <b>${p.total_risk || "—"}</b></span>
           <span class="chip">建议留现金 <b>${p.cash_reserve_pct != null ? p.cash_reserve_pct + "%" : "—"}</b></span>

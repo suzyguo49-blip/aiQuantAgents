@@ -413,10 +413,15 @@ def today_plan():
     cash = float(pf.get("cash") or 0)
     top_k = int(data.get("top_k", 10))
     # 权重优先级：请求传入 > 周记里存的本周组合 > 因子库默认
-    weights = data.get("weights") or journal_store.current_weights() or {
-        k: v["default_weight"]
-        for k, v in factors.FACTOR_LIBRARY.items() if v["default_weight"] > 0
-    }
+    weekly = journal_store.current_weights()
+    if data.get("weights"):
+        weights, weights_source = data["weights"], "自定义"
+    elif weekly:
+        weights, weights_source = weekly, "本周组合"
+    else:
+        weights = {k: v["default_weight"]
+                   for k, v in factors.FACTOR_LIBRARY.items() if v["default_weight"] > 0}
+        weights_source = "默认因子"
 
     try:
         sel = _run_selection(weights, top_k, None)
@@ -453,6 +458,7 @@ def today_plan():
             "fidelity": fidelity,
             "data_as_of": md_day,
             "cash": cash,
+            "weights_source": weights_source,
             "plan": plan,
             "orders": orders,
             "uncovered": uncovered,
