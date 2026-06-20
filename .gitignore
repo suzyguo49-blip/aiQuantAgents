@@ -27,3 +27,6 @@ journal.json
 .DS_Store
 .idea/
 .vscode/
+
+# 本地密钥(API key/密码),绝不入库
+susu.env
