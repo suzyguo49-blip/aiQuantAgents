@@ -301,6 +301,24 @@ def portfolio_api():
     return jsonify(pf)
 
 
+@app.route("/api/portfolio/ocr", methods=["POST"])
+def portfolio_ocr():
+    """截图识别持仓（需管理员密钥）。只返回识别结果供前端确认，不直接保存。"""
+    gate = _admin_gate()
+    if gate:
+        return jsonify(gate[0]), gate[1]
+
+    data = request.get_json() or {}
+    image = data.get("image")
+    if not image:
+        return jsonify({"error": "未收到图片"}), 400
+    try:
+        import vision_ocr
+        return jsonify(vision_ocr.extract_holdings(image))
+    except Exception as e:
+        return jsonify({"error": f"识别失败：{e}"}), 500
+
+
 @app.route("/api/today/plan", methods=["POST"])
 def today_plan():
     """实盘今日：用真实持仓 + 现金 + 选股候选，由 AI 统筹出仓位方案（需管理员密钥）。"""

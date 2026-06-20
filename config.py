@@ -9,6 +9,7 @@ QUANT_DB_PATH = os.environ.get(
 # 使用阿里云通义千问 API（性价比优于海外大模型）
 ORCHESTRATOR_MODEL = "qwen-plus"
 ANALYST_MODEL = "qwen-plus"
+VL_MODEL = "qwen-vl-max"   # 视觉模型：识别券商持仓截图
 
 # API key 从环境变量读取
 # 运行前： export DASHSCOPE_API_KEY=sk-ws-...

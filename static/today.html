@@ -118,8 +118,14 @@
 
     <div class="toolbar">
       <button class="ghost" onclick="addRow()">+ 添加一行</button>
+      <button class="ghost" onclick="document.getElementById('shot').click()">📷 截图识别</button>
+      <input type="file" id="shot" accept="image/*" style="display:none" onchange="ocrShot(this)" />
       <button onclick="savePortfolio()">💾 保存持仓</button>
       <span class="status" id="status"></span>
+    </div>
+    <div class="hint" style="margin-top:8px;">
+      📷 截图识别：上传券商 App 的持仓截图，AI 自动填表——<b>识别后请务必逐行核对再保存</b>（识别可能出错，这是真金白银）。
+      图片会上传到通义千问识别。
     </div>
   </div>
 
@@ -173,6 +179,30 @@
         if (!pf.holdings || pf.holdings.length === 0) addRow();
         if (pf.updated_at) setStatus("已载入上次保存（" + pf.updated_at.replace("T", " ") + "）", "ok");
       } catch (e) { setStatus("加载失败：" + e.message, "error"); }
+    }
+
+    function ocrShot(inp) {
+      const file = inp.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async () => {
+        setStatus("📷 识别截图中…（约 10 秒）");
+        try {
+          const res = await fetch("/api/portfolio/ocr", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ image: reader.result }),
+          });
+          const data = await res.json();
+          if (!res.ok) { setStatus("识别失败：" + (data.error || res.status), "error"); return; }
+          if (data.cash != null) document.getElementById("cash").value = data.cash;
+          tbody.innerHTML = "";
+          (data.holdings || []).forEach(addRow);
+          if (!data.holdings || data.holdings.length === 0) addRow();
+          setStatus("✅ 已识别 " + (data.holdings || []).length + " 只，请逐行核对后再保存", "ok");
+        } catch (e) { setStatus("请求失败：" + e.message, "error"); }
+        finally { inp.value = ""; }
+      };
+      reader.readAsDataURL(file);
     }
 
     async function savePortfolio() {
