@@ -165,3 +165,32 @@ button.ghost:hover { background: var(--bg); border-color: var(--text); }
 .status.error, .error { color: #b91c1c; }
 
 .hidden { display: none; }
+
+/* ============================================================
+   手机端适配（≤640px）—— 收紧留白、宽表格横向滚动、因子行可用
+   ============================================================ */
+@media (max-width: 640px) {
+  body { font-size: 15px; }
+  .wrap { padding: 36px 16px 72px; }
+  .page-head .title { font-size: 1.6rem; }
+  .subtitle { font-size: 0.92rem; }
+  .nav { gap: 14px 18px; margin-top: 20px; padding-top: 16px; }
+
+  .card { padding: 18px 16px; }
+  .card > h2 { font-size: 1rem; }
+
+  /* 宽表格：整体变可横向滚动的块，不再撑破屏幕 */
+  table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    white-space: nowrap; }
+  th, td { padding: 10px 10px; }
+
+  /* 因子滑块行：手机上隐藏描述、缩列，腾出空间给滑块 */
+  .factor { grid-template-columns: 20px 1fr 84px 40px; gap: 10px; }
+  .factor .fdesc { display: none; }
+
+  /* 按钮/输入更好点按 */
+  button:not(.chip) { padding: 11px 18px; }
+  input, select, textarea { font-size: 16px; }  /* ≥16px 防 iOS 聚焦时自动放大页面 */
+
+  .toolbar, .controls { gap: 10px 12px; }
+}

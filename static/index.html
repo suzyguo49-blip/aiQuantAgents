@@ -50,6 +50,13 @@
     code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: 0.88em; background: var(--surface); border: 1px solid var(--line);
       border-radius: 4px; padding: 1px 6px; color: var(--text); }
+
+    @media (max-width: 640px) {
+      .hero .title { font-size: 1.85rem; }
+      .tool .row { flex-direction: column; }   /* 输入框与按钮竖排，按钮占满宽 */
+      .tool .row .btn { width: 100%; justify-content: center; }
+      .section h2 { font-size: 1.2rem; }
+    }
   </style>
 </head>
 <body>
