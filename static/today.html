@@ -297,8 +297,17 @@
         <div class="name" style="margin-top:8px;font-size:0.78rem;">行业配置：${indStr}</div>
         ${p.info_sources ? `<div class="name" style="margin-top:4px;font-size:0.78rem;">参考信息源：${p.info_sources}</div>` : ""}
         ${p.risk_note ? `<div class="risk-note">⚠️ ${p.risk_note}</div>` : ""}
+        ${renderUncovered(d.uncovered)}
         ${renderOrders(d.orders)}
         <div class="hint" style="margin-top:12px;">⚠️ AI 生成，仅供研究参考，不构成投资建议。请自行复核后再决策。</div>`;
+    }
+
+    function renderUncovered(u) {
+      if (!u || u.length === 0) return "";
+      const list = u.map(x => `${x.symbol}（${x.shares}股）`).join("、");
+      return `<div class="risk-note" style="color:#94a3b8;border-color:#475569;background:rgba(71,85,105,0.12);">
+        ℹ️ 以下持仓<b>不在 A股数据覆盖范围</b>（ETF / 港股等），<b>未纳入今日统筹与下单清单</b>，请自行管理：<br>${list}<br>
+        <span style="font-size:0.76rem;">（统筹只针对你的 A股持仓 + 现金这部分进行配置）</span></div>`;
     }
 
     function renderOrders(o) {

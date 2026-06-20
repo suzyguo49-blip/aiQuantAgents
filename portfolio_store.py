@@ -56,7 +56,8 @@ def save_portfolio(cash, holdings: list[dict]) -> dict:
         try:
             sym = normalize_symbol(raw)
         except DataError:
-            raise ValueError(f"第 {i} 行股票代码无法识别：{raw}")
+            # 非标准 A股代码(ETF/港股等)原样保存，后续统筹时按"不在覆盖范围"处理
+            sym = raw.lower()
         try:
             shares = int(h.get("shares", 0))
         except (TypeError, ValueError):

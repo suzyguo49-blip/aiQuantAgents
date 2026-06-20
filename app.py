@@ -360,26 +360,27 @@ def today_plan():
         load_start = (pd.Timestamp(md_day) - pd.Timedelta(days=10)).strftime("%Y-%m-%d")
         md = _get_market_data(load_start, None)
         closes = md.close.loc[md.dates[-1]]
-        holdings = []
+        # 拆分：A股可统筹(有现价) vs 不在覆盖范围(ETF/港股等，库里无数据)
+        covered, uncovered = [], []
         for h in pf.get("holdings", []):
             s = h["symbol"]
             close = closes.get(s)
-            holdings.append({
-                "symbol": s,
-                "name": md.names.get(s, s),
-                "shares": h["shares"],
-                "close": round(float(close), 2) if close is not None and pd.notna(close) else None,
-            })
+            if close is not None and pd.notna(close):
+                covered.append({
+                    "symbol": s, "name": md.names.get(s, s),
+                    "shares": h["shares"], "close": round(float(close), 2),
+                })
+            else:
+                uncovered.append({"symbol": s, "shares": h["shares"]})
 
         strat = AIStrategy(use_research=use_research, use_sentiment=use_sentiment)
-        plan = strat.plan(sel["picks"], holdings, cash)
+        plan = strat.plan(sel["picks"], covered, cash)
 
         # 把百分比方案翻译成可执行下单清单（真实现价 + 100股整手 + 实际现金）
         prices = {p["symbol"]: p["close"] for p in sel["picks"]}
-        for h in holdings:
-            if h["close"] is not None:
-                prices[h["symbol"]] = h["close"]
-        orders = orders_mod.build_orders(plan, holdings, cash, prices)
+        for h in covered:
+            prices[h["symbol"]] = h["close"]
+        orders = orders_mod.build_orders(plan, covered, cash, prices)
 
         return jsonify({
             "mode": mode,
@@ -388,6 +389,7 @@ def today_plan():
             "cash": cash,
             "plan": plan,
             "orders": orders,
+            "uncovered": uncovered,
         })
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
