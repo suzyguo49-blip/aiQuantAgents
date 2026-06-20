@@ -30,6 +30,11 @@
     .chart-wrap { position: relative; height: 300px; }
     .chart-wrap.short { height: 180px; }
     .buy { color: #15803d; } .sell { color: #b91c1c; }
+    .trim-toggle { display: flex; align-items: center; gap: 7px; font-size: 0.86rem;
+      color: var(--text-2); cursor: pointer; }
+    .trim-toggle input { width: 15px; height: 15px; accent-color: var(--accent); }
+    .act-建仓, .act-加仓 { color: #15803d; font-weight: 600; }
+    .act-清仓, .act-减仓, .act-止损 { color: #b91c1c; font-weight: 600; }
   </style>
   <script src="/auth.js"></script>
 </head>
@@ -61,6 +66,9 @@
     <div class="field"><label>持仓数</label><input id="topk" class="narrow" type="text" value="10" /></div>
     <div class="field"><label>换仓周期(日)</label><input id="reb" class="narrow" type="text" value="5" /></div>
     <div class="field"><label>止损(%)</label><input id="stop" class="narrow" type="text" value="10" /></div>
+    <label class="trim-toggle" title="开启后：超配持仓会被修剪到目标权重（对称再平衡）。会改变回测结果。">
+      <input id="trim" type="checkbox" /> 对称再平衡(超配减仓)
+    </label>
     <button id="runBtn" onclick="runBacktest()">运行回测</button>
     <button class="ghost" onclick="sendToSelect()" title="带当前因子权重去选股工作台">📤 用此配置选股</button>
   </div>
@@ -91,14 +99,18 @@
     </div>
 
     <div class="card">
-      <h2>最近交易（末 30 笔）</h2>
-      <table id="tradesTable"><thead><tr><th>日期</th><th>方向</th><th>名称</th><th>价格</th><th>股数</th><th>原因</th></tr></thead><tbody></tbody></table>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <h2 style="margin:0;">交易明细（表格显示末 30 笔）</h2>
+        <button class="ghost" id="dlBtn" onclick="downloadTrades()">⬇ 下载全部交易流水 (CSV)</button>
+      </div>
+      <table id="tradesTable"><thead><tr><th>日期</th><th>类型</th><th>代码</th><th>名称</th><th>价格</th><th>股数</th><th>金额</th></tr></thead><tbody></tbody></table>
     </div>
   </div>
 
   <script>
     let equityChart, ddChart, holdChart;
     let FACTORS = [];
+    let lastResult = null;   // 存最近一次回测结果，供下载
     const pct = x => (x * 100).toFixed(2) + "%";
 
     async function loadFactors() {
@@ -179,6 +191,7 @@
         top_k: parseInt(document.getElementById("topk").value) || 10,
         rebalance_days: parseInt(document.getElementById("reb").value) || 5,
         stop_loss: (parseFloat(document.getElementById("stop").value) || 10) / 100,
+        trim_to_target: document.getElementById("trim").checked,
         weights,
       };
 
@@ -200,6 +213,7 @@
     }
 
     function render(d) {
+      lastResult = d;
       renderMetrics(d.metrics);
       renderEquity(d);
       renderDrawdown(d);
@@ -272,8 +286,29 @@
         `<tr><td>${h.symbol}</td><td>${h.name}</td><td>${h.industry}</td><td>${h.shares}</td></tr>`).join("")
         || '<tr><td colspan="4" style="color:var(--text-3)">期末空仓</td></tr>';
       document.querySelector("#tradesTable tbody").innerHTML = d.recent_trades.slice().reverse().map(t =>
-        `<tr><td>${t.date}</td><td class="${t.side === 'buy' ? 'buy' : 'sell'}">${t.side === 'buy' ? '买入' : '卖出'}</td>`
-        + `<td>${t.name}</td><td>${t.price}</td><td>${t.shares}</td><td>${t.reason === 'stop_loss' ? '止损' : '换仓'}</td></tr>`).join("");
+        `<tr><td>${t.date}</td><td class="act-${t.action}">${t.action || (t.side === 'buy' ? '买入' : '卖出')}</td>`
+        + `<td>${t.symbol}</td><td>${t.name}</td><td>${t.price}</td><td>${t.shares}</td>`
+        + `<td>${(t.amount || 0).toLocaleString("zh-CN")}</td></tr>`).join("");
+    }
+
+    function downloadTrades() {
+      if (!lastResult || !lastResult.all_trades) return;
+      const rows = lastResult.all_trades;
+      const header = ["日期", "类型", "方向", "代码", "名称", "价格", "股数", "金额", "内部原因"];
+      const lines = [header.join(",")];
+      for (const t of rows) {
+        lines.push([t.date, t.action, t.side, t.symbol,
+          `"${(t.name || "").replace(/"/g, '""')}"`, t.price, t.shares, t.amount, t.reason].join(","));
+      }
+      // ﻿ BOM 让 Excel 正确识别 UTF-8 中文
+      const blob = new Blob(["﻿" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const m = lastResult.metrics || {};
+      a.href = url;
+      a.download = `backtest_trades_${rows.length}笔_${(m.total_return != null ? (m.total_return * 100).toFixed(1) + "pct" : "")}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
     }
 
     loadFactors();

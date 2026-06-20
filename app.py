@@ -187,6 +187,7 @@ def backtest():
     top_k = int(data.get("top_k", 10))
     rebalance_days = int(data.get("rebalance_days", 5))
     stop_loss = float(data.get("stop_loss", 0.10))
+    trim_to_target = bool(data.get("trim_to_target"))
     weights = data.get("weights") or {}
 
     # 用户传了因子权重就用自定义配置，否则用默认
@@ -198,7 +199,8 @@ def backtest():
     load_start = (pd.Timestamp(start) - pd.Timedelta(days=90)).strftime("%Y-%m-%d")
     try:
         md = _get_market_data(load_start, end)
-        strat = Strategy(top_k=top_k, rebalance_days=rebalance_days, stop_loss=stop_loss)
+        strat = Strategy(top_k=top_k, rebalance_days=rebalance_days, stop_loss=stop_loss,
+                         trim_to_target=trim_to_target)
         if factor_config:
             strat.factor_config = factor_config
         result = Backtester(md, strat, initial_capital=1_000_000).run(start, end)

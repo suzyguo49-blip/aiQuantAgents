@@ -39,7 +39,8 @@ class Trade:
     price: float
     shares: int
     amount: float
-    reason: str      # rebalance | stop_loss
+    reason: str      # rebalance | stop_loss | trim（内部代码，逻辑用）
+    action: str = ""  # 建仓 | 加仓 | 清仓 | 减仓 | 止损（展示用标签）
 
 
 @dataclass
@@ -72,14 +73,13 @@ class BacktestResult:
              "industry": self.industries.get(s, ""), "shares": sh}
             for s, sh in sorted(self.final_holdings.items())
         ]
-        # 最近交易（取末尾若干条）
-        recent = [
-            {"date": t.date.strftime("%Y-%m-%d"), "symbol": t.symbol,
-             "name": self.names.get(t.symbol, t.symbol),
-             "side": t.side, "price": round(t.price, 2),
-             "shares": t.shares, "reason": t.reason}
-            for t in self.trades[-30:]
-        ]
+        def trade_dict(t):
+            return {"date": t.date.strftime("%Y-%m-%d"), "symbol": t.symbol,
+                    "name": self.names.get(t.symbol, t.symbol),
+                    "side": t.side, "action": t.action, "price": round(t.price, 2),
+                    "shares": t.shares, "amount": round(t.amount, 2), "reason": t.reason}
+        recent = [trade_dict(t) for t in self.trades[-30:]]   # 表格只显示最近 30 笔
+        all_trades = [trade_dict(t) for t in self.trades]     # 全部流水（供下载）
         return {
             "labels": labels,
             "equity": [round(x, 4) for x in eq_norm.tolist()],
@@ -90,6 +90,7 @@ class BacktestResult:
                         for k, v in self.metrics.items()},
             "final_holdings": final,
             "recent_trades": recent,
+            "all_trades": all_trades,
             "trade_count": len(self.trades),
         }
 
@@ -165,6 +166,12 @@ class Backtester:
                         if target_val > cur_val:
                             budget = min(target_val - cur_val, cash)
                             cash -= self._buy(today, sym, holdings, px, budget, trades)
+                        elif target_val < cur_val and getattr(strat, "trim_to_target", False):
+                            # 减仓（开关开启时）：把超配持仓修剪到目标权重（整手）
+                            over_shares = int((cur_val - target_val) / px // 100 * 100)
+                            if over_shares > 0:
+                                cash += self._sell(today, sym, holdings, px, "trim", trades,
+                                                   shares=over_shares)
                     pending = {}
 
             # —— 2. 收盘估值，记录净值 ——
@@ -225,20 +232,29 @@ class Backtester:
             tot = pos["shares"] + shares
             pos["entry"] = (pos["entry"] * pos["shares"] + fill * shares) / tot
             pos["shares"] = tot
+            action = "加仓"
         else:
             holdings[sym] = {"shares": shares, "entry": fill}
-        trades.append(Trade(date, sym, "buy", fill, shares, cost, "rebalance"))
+            action = "建仓"
+        trades.append(Trade(date, sym, "buy", fill, shares, cost, "rebalance", action))
         return cost
 
-    def _sell(self, date, sym, holdings, px, reason, trades) -> float:
-        """全部卖出 sym；返回回收现金。"""
-        pos = holdings.pop(sym)
-        shares = pos["shares"]
+    def _sell(self, date, sym, holdings, px, reason, trades, shares=None) -> float:
+        """卖出 sym；shares=None 表示全部卖出，否则部分卖出（减仓）。返回回收现金。"""
+        pos = holdings[sym]
+        sell_shares = pos["shares"] if shares is None else min(int(shares), pos["shares"])
+        if sell_shares <= 0:
+            return 0.0
         fill = px * (1 - self.costs.slippage)
-        gross = shares * fill
+        gross = sell_shares * fill
         fee = gross * (self.costs.commission + self.costs.stamp_tax)
         proceeds = gross - fee
-        trades.append(Trade(date, sym, "sell", fill, shares, proceeds, reason))
+        if sell_shares >= pos["shares"]:
+            holdings.pop(sym)
+        else:
+            pos["shares"] -= sell_shares
+        action = {"stop_loss": "止损", "trim": "减仓"}.get(reason, "清仓")
+        trades.append(Trade(date, sym, "sell", fill, sell_shares, proceeds, reason, action))
         return proceeds
 
     @staticmethod

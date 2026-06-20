@@ -45,6 +45,7 @@ class RuleStrategy(PositionPolicy):
     weighting: str = "equal"         # equal | score（按分数加权）
     stop_loss: float = 0.10          # 单票止损（相对买入价回撤 10% 离场）
     max_per_industry: int = 3        # 单行业最多持仓数（分散风险）
+    trim_to_target: bool = False     # 对称再平衡：超配持仓修剪到目标（默认关，保持原行为）
     factor_config: dict = field(default_factory=lambda: dict(DEFAULT_FACTORS))
 
     def select(
