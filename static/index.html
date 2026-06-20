@@ -3,421 +3,196 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>A股智能研究助手</title>
+  <title>SUSU 量化 · A股智能研究系统</title>
+  <link rel="stylesheet" href="/style.css" />
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    /* 首页特定 —— 仍遵循极简：细线、留白、单一强调色 */
+    .hero { padding-bottom: 8px; }
+    .hero .title { font-size: 2.4rem; }
+    .tool { margin-top: 28px; }
+    .tool .row { display: flex; gap: 12px; }
+    .tool .row .input { flex: 1; }
+    .chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+    .chip { font-size: 0.84rem; color: var(--text-2); background: var(--bg);
+      border: 1px solid var(--line); border-radius: 999px; padding: 5px 14px;
+      cursor: pointer; transition: border-color var(--ease), color var(--ease); }
+    .chip:hover { border-color: var(--text); color: var(--text); }
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #0f1117;
-      color: #e2e8f0;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 40px 16px 80px;
-    }
+    .result { margin-top: 26px; display: none; }
+    .result.show { display: block; }
+    .result .status { font-size: 0.86rem; color: var(--text-3); margin-bottom: 12px; }
+    .steps { list-style: none; margin-bottom: 16px; }
+    .steps li { font-size: 0.86rem; color: var(--text-2); padding: 4px 0 4px 18px;
+      position: relative; }
+    .steps li::before { content: "—"; position: absolute; left: 0; color: var(--text-3); }
+    .out { font-size: 0.95rem; line-height: 1.8; color: var(--text);
+      white-space: pre-wrap; }
+    .out strong { font-weight: 600; }
+    .disclaimer { color: var(--text-3); font-size: 0.82rem; margin-top: 16px;
+      padding-top: 14px; border-top: 1px solid var(--line); line-height: 1.6; }
+    .err { color: #b91c1c; }
 
-    header {
-      text-align: center;
-      margin-bottom: 40px;
-    }
-
-    header h1 {
-      font-size: 2rem;
-      font-weight: 700;
-      background: linear-gradient(135deg, #38bdf8, #818cf8);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-
-    header p {
-      color: #64748b;
-      margin-top: 8px;
-      font-size: 0.95rem;
-    }
-
-    .card {
-      background: #1e2130;
-      border: 1px solid #2d3148;
-      border-radius: 16px;
-      padding: 32px;
-      width: 100%;
-      max-width: 720px;
-    }
-
-    .input-row {
-      display: flex;
-      gap: 12px;
-    }
-
-    input[type="text"] {
-      flex: 1;
-      background: #0f1117;
-      border: 1px solid #2d3148;
-      border-radius: 10px;
-      color: #e2e8f0;
-      font-size: 1rem;
-      padding: 12px 16px;
-      outline: none;
-      transition: border-color 0.2s;
-    }
-
-    input[type="text"]::placeholder { color: #475569; }
-    input[type="text"]:focus { border-color: #38bdf8; }
-
-    button {
-      background: linear-gradient(135deg, #38bdf8, #818cf8);
-      border: none;
-      border-radius: 10px;
-      color: #0f1117;
-      cursor: pointer;
-      font-size: 0.95rem;
-      font-weight: 600;
-      padding: 12px 24px;
-      transition: opacity 0.2s;
-      white-space: nowrap;
-    }
-
-    button:hover { opacity: 0.88; }
-    button:disabled { opacity: 0.4; cursor: not-allowed; }
-
-    .chips {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 14px;
-    }
-
-    .chip {
-      background: #0f1117;
-      border: 1px solid #2d3148;
-      border-radius: 20px;
-      color: #94a3b8;
-      cursor: pointer;
-      font-size: 0.82rem;
-      padding: 4px 14px;
-      transition: border-color 0.2s, color 0.2s;
-    }
-
-    .chip:hover { border-color: #38bdf8; color: #38bdf8; }
-
-    .result-wrap {
-      margin-top: 28px;
-      display: none;
-    }
-
-    .result-wrap.visible { display: block; }
-
-    .status {
-      align-items: center;
-      color: #64748b;
-      display: flex;
-      font-size: 0.88rem;
-      gap: 8px;
-      margin-bottom: 16px;
-    }
-
-    .spinner {
-      width: 16px;
-      height: 16px;
-      border: 2px solid #2d3148;
-      border-top-color: #38bdf8;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-      display: none;
-    }
-
-    .spinner.active { display: block; }
-
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    .steps {
-      list-style: none;
-      margin-bottom: 18px;
-    }
-
-    .steps li {
-      color: #94a3b8;
-      font-size: 0.85rem;
-      padding: 5px 0 5px 22px;
-      position: relative;
-      animation: fadein 0.3s ease;
-    }
-
-    .steps li::before {
-      content: "✓";
-      color: #38bdf8;
-      position: absolute;
-      left: 0;
-    }
-
-    @keyframes fadein { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; } }
-
-    .result-box {
-      background: #0f1117;
-      border: 1px solid #2d3148;
-      border-radius: 12px;
-      padding: 20px 24px;
-      white-space: pre-wrap;
-      line-height: 1.75;
-      font-size: 0.93rem;
-      color: #cbd5e1;
-      min-height: 60px;
-    }
-
-    .disclaimer {
-      color: #f59e0b;
-      font-size: 0.82rem;
-      margin-top: 14px;
-      line-height: 1.6;
-    }
-
-    .error { color: #f87171; }
-
-    /* ===== 研究团队介绍 ===== */
-    .team {
-      width: 100%;
-      max-width: 720px;
-      margin-top: 28px;
-    }
-    .team h2 {
-      font-size: 1.05rem;
-      font-weight: 700;
-      margin-bottom: 4px;
-      background: linear-gradient(135deg, #38bdf8, #818cf8);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-    }
-    .team .sub { color: #64748b; font-size: 0.85rem; margin-bottom: 18px; }
-
-    .layer { margin-bottom: 22px; }
-    .layer-title {
-      display: flex; align-items: center; gap: 10px;
-      font-size: 0.82rem; color: #94a3b8; font-weight: 600;
-      margin-bottom: 12px;
-    }
-    .layer-title .badge {
-      background: #1e2130; border: 1px solid #2d3148; border-radius: 6px;
-      color: #38bdf8; font-size: 0.72rem; padding: 2px 8px;
-    }
-    .layer-title .line { flex: 1; height: 1px; background: #2d3148; }
-
-    .agent-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    @media (max-width: 560px) { .agent-grid { grid-template-columns: 1fr; } }
-
-    .agent {
-      background: #1e2130; border: 1px solid #2d3148; border-radius: 12px;
-      padding: 14px 16px; transition: border-color 0.2s, transform 0.2s;
-    }
-    .agent:hover { border-color: #38bdf8; transform: translateY(-2px); }
-    .agent .head { display: flex; align-items: center; gap: 9px; margin-bottom: 6px; }
-    .agent .icon { font-size: 1.2rem; }
-    .agent .name { font-size: 0.92rem; font-weight: 600; color: #e2e8f0; }
-    .agent .role { font-size: 0.79rem; color: #94a3b8; line-height: 1.55; }
-    .agent .data { font-size: 0.72rem; color: #64748b; margin-top: 7px; }
-    .agent .data b { color: #818cf8; font-weight: 500; }
-
-    .flow {
-      background: #0f1117; border: 1px dashed #2d3148; border-radius: 12px;
-      padding: 14px 18px; color: #94a3b8; font-size: 0.82rem; line-height: 1.7;
-      text-align: center;
-    }
-    .flow b { color: #38bdf8; font-weight: 600; }
-    .flow .arrow { color: #475569; margin: 0 6px; }
+    .section h2 { font-size: 1.35rem; margin-bottom: 6px; }
+    .section .lead { color: var(--text-2); margin-bottom: 22px; }
+    h3.sub { font-size: 1rem; margin: 26px 0 10px; color: var(--text); }
+    ol.flow { list-style: none; counter-reset: s; }
+    ol.flow li { counter-increment: s; position: relative; padding: 10px 0 10px 34px;
+      border-bottom: 1px solid var(--line); color: var(--text-2); font-size: 0.95rem; }
+    ol.flow li:last-child { border-bottom: none; }
+    ol.flow li::before { content: counter(s); position: absolute; left: 0; top: 10px;
+      width: 22px; height: 22px; border: 1px solid var(--line-strong); border-radius: 50%;
+      font-size: 0.78rem; color: var(--text-2); display: flex; align-items: center;
+      justify-content: center; }
+    ol.flow li b { color: var(--text); font-weight: 600; }
+    .note { font-size: 0.9rem; color: var(--text-2); background: var(--surface);
+      border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 18px;
+      margin-top: 18px; line-height: 1.7; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.88em; background: var(--surface); border: 1px solid var(--line);
+      border-radius: 4px; padding: 1px 6px; color: var(--text); }
   </style>
-  <script src="/auth.js"></script>
 </head>
 <body>
-  <header>
-    <h1>SUSU 的 A股智能研究助手</h1>
-    <p>多 Agent 深度研究 · 通义千问驱动</p>
-    <div style="margin-top:12px;font-size:0.88rem;">
-      <a href="/" style="color:#38bdf8;text-decoration:none;margin:0 10px;">个股 AI 研究</a>
-      <a href="/select" style="color:#64748b;text-decoration:none;margin:0 10px;">选股工作台</a>
-      <a href="/backtest" style="color:#64748b;text-decoration:none;margin:0 10px;">策略回测</a>
-      <a href="/today" style="color:#64748b;text-decoration:none;margin:0 10px;">今日策略</a>
-    </div>
-  </header>
+  <main class="wrap">
 
-  <div class="card">
-    <div class="input-row">
-      <input id="symbolInput" type="text" placeholder="输入股票代码，如 600519" maxlength="10" />
-      <button id="analyzeBtn" onclick="analyze()">开始分析</button>
-    </div>
-    <div class="chips">
-      <span class="chip" onclick="quickFill('600519')">600519 贵州茅台</span>
-      <span class="chip" onclick="quickFill('000001')">000001 平安银行</span>
-      <span class="chip" onclick="quickFill('300750')">300750 宁德时代</span>
-    </div>
+    <!-- Hero -->
+    <header class="hero">
+      <div class="eyebrow">SUSU 量化</div>
+      <h1 class="title">A股智能研究系统</h1>
+      <p class="subtitle">多因子选股 · 策略回测 · AI 仓位统筹，一个安静、专注的工作台。</p>
+      <nav class="nav">
+        <a href="/" class="active">个股 AI 研究</a>
+        <a href="/select">选股工作台</a>
+        <a href="/backtest">策略回测</a>
+        <a href="/today">今日策略</a>
+        <a href="/journal">实盘周记</a>
+        <a href="/admin">管理面板</a>
+      </nav>
+    </header>
 
-    <div class="result-wrap" id="resultWrap">
-      <div class="status">
-        <div class="spinner" id="spinner"></div>
-        <span id="statusText"></span>
+    <!-- AI 个股研究工具 -->
+    <section class="tool">
+      <div class="row">
+        <input id="symbolInput" class="input" type="text" placeholder="输入股票代码，如 600519" maxlength="10" />
+        <button id="analyzeBtn" class="btn btn-primary" onclick="analyze()">开始分析</button>
       </div>
-      <ul class="steps" id="steps"></ul>
-      <div class="result-box" id="resultBox"></div>
-      <div class="disclaimer" id="disclaimer"></div>
-    </div>
-  </div>
-
-  <section class="team">
-    <h2>研究团队 · 7 位 AI Agent 协作</h2>
-    <div class="sub">输入代码后，下面这支团队会分三层协作，最终给出研究观点或次日交易计划。</div>
-
-    <div class="layer">
-      <div class="layer-title"><span class="badge">第一层</span>四位专职分析师 · 并行出具结论<span class="line"></span></div>
-      <div class="agent-grid">
-        <div class="agent">
-          <div class="head"><span class="icon">🔧</span><span class="name">技术面分析师</span></div>
-          <div class="role">研判趋势方向、关键支撑压力位、均线形态与量价配合。</div>
-          <div class="data">看数据：<b>20日K线 · MA5/10/20 · 量价 · 区间高低</b></div>
-        </div>
-        <div class="agent">
-          <div class="head"><span class="icon">📊</span><span class="name">基本面分析师</span></div>
-          <div class="role">判断估值贵贱、所处历史分位，捕捉业绩改善信号。</div>
-          <div class="data">看数据：<b>PE/PB/PS · 股息率 · 估值历史分位</b></div>
-        </div>
-        <div class="agent">
-          <div class="head"><span class="icon">💰</span><span class="name">资金面分析师</span></div>
-          <div class="role">观察资金活跃度，研判主力是在流入还是流出。</div>
-          <div class="data">看数据：<b>换手率 · 量比 · 成交额趋势</b></div>
-        </div>
-        <div class="agent">
-          <div class="head"><span class="icon">⚠️</span><span class="name">风控分析师</span></div>
-          <div class="role">给决策“踩刹车”，排查硬性风险，立场偏保守。</div>
-          <div class="data">看数据：<b>ST状态 · 估值极值 · 连续下跌</b></div>
-        </div>
+      <div class="chips">
+        <span class="chip" onclick="quickFill('600519')">600519 贵州茅台</span>
+        <span class="chip" onclick="quickFill('000001')">000001 平安银行</span>
+        <span class="chip" onclick="quickFill('300750')">300750 宁德时代</span>
       </div>
-    </div>
-
-    <div class="layer">
-      <div class="layer-title"><span class="badge">第二层</span>多空辩论 · 基于结论对抗论证<span class="line"></span></div>
-      <div class="agent-grid">
-        <div class="agent">
-          <div class="head"><span class="icon">🐂</span><span class="name">多头分析师</span></div>
-          <div class="role">找出所有支持上涨的证据，给出最乐观但站得住脚的逻辑。</div>
-          <div class="data">规则：<b>只基于已有结论推演，不捏造数据</b></div>
-        </div>
-        <div class="agent">
-          <div class="head"><span class="icon">🐻</span><span class="name">空头分析师</span></div>
-          <div class="role">挑出所有风险与瑕疵，给出最审慎的回避逻辑。</div>
-          <div class="data">规则：<b>只基于已有结论推演，不捏造数据</b></div>
-        </div>
+      <div class="result" id="resultWrap">
+        <div class="status" id="statusText"></div>
+        <ul class="steps" id="steps"></ul>
+        <div class="out" id="resultBox"></div>
+        <div class="disclaimer" id="disclaimer"></div>
       </div>
-    </div>
+    </section>
 
-    <div class="layer">
-      <div class="layer-title"><span class="badge">第三层</span>研究主管 · 综合汇总<span class="line"></span></div>
-      <div class="agent-grid">
-        <div class="agent">
-          <div class="head"><span class="icon">🎯</span><span class="name">研究主管（研究模式）</span></div>
-          <div class="role">综合四方结论与多空交锋，给出偏多 / 偏空 / 中性的结构化研究观点。</div>
-        </div>
-        <div class="agent">
-          <div class="head"><span class="icon">🧭</span><span class="name">交易主管（交易模式）</span></div>
-          <div class="role">把研究结论转成次日可执行计划：买入区间、止损位、目标价、仓位。</div>
-          <div class="data">入口：<b>选股工作台 → AI 交易计划</b></div>
-        </div>
+    <!-- ============ 用户手册 ============ -->
+    <section class="section">
+      <div class="eyebrow">用户手册</div>
+      <h2>这套系统能帮你做什么</h2>
+      <p class="lead">
+        它把「研究 → 选股 → 回测验证 → 实盘统筹 → 复盘」连成一条闭环。
+        数据用本地 A股历史库，AI 用通义千问。下面按页面与概念逐一说明。
+      </p>
+
+      <h3 class="sub">六个页面</h3>
+      <div class="deflist">
+        <div class="row"><dt>个股 AI 研究</dt><dd>输入一只股票，4 位分析师(技术/基本面/资金/风控)并行出结论，经多空辩论后由主管汇总成研究观点。就是本页上方的工具。</dd></div>
+        <div class="row"><dt>选股工作台</dt><dd>自定义因子与权重，对全市场打分，选出 top-N，并展示每只的因子拆解；可一键让 AI 给出次日交易计划。</dd></div>
+        <div class="row"><dt>策略回测</dt><dd>用你的因子组合跑历史回测，严格无未来函数(收盘决策、次日开盘成交)，输出净值、回撤与 12 项风险指标。<b>这里是验证因子好坏的地方。</b></dd></div>
+        <div class="row"><dt>今日策略</dt><dd>录入真实持仓与现金(可截图识别)，AI 统筹出今日仓位方案，并翻译成「买卖几手」的可执行下单清单。</dd></div>
+        <div class="row"><dt>实盘周记</dt><dd>每周存一版因子组合(今日策略会自动采用)，每天记一次总资产，周末自动算出本周战绩 × 当周因子组合。</dd></div>
+        <div class="row"><dt>管理面板</dt><dd>对外分享时监控访问与 AI 配额用量。需管理员密钥。</dd></div>
       </div>
-    </div>
 
-    <div class="flow">
-      <b>四分析师并行</b><span class="arrow">→</span>汇成结论<span class="arrow">→</span><b>多空并行辩论</b><span class="arrow">→</span><b>主管综合</b><span class="arrow">→</span>研究观点 / 交易计划
-    </div>
-  </section>
+      <h3 class="sub">推荐的每周工作流</h3>
+      <ol class="flow">
+        <li>周末在 <b>策略回测</b> 里试不同因子权重，找到历史表现稳健的一组。</li>
+        <li>到 <b>实盘周记</b> 把这组权重<b>存为本周组合</b>。</li>
+        <li>每个交易日打开 <b>今日策略</b>，录入/截图当前持仓，生成<b>今日下单清单</b>，照着到券商执行。</li>
+        <li>每天在 <b>实盘周记</b> 截图记一次总资产。</li>
+        <li>周末看本周战绩，对照当周因子组合复盘，再开始下一周。</li>
+      </ol>
+
+      <h3 class="sub">三个要理解的概念</h3>
+      <div class="deflist">
+        <div class="row"><dt>因子</dt><dd>动量、趋势、价值(PE)、低波动、短期反转等量化信号。每天对全市场做横截面 z-score 标准化后加权合成「综合分」。AI 只读这些数字、不自己算。</dd></div>
+        <div class="row"><dt>三档信息</dt><dd>今日统筹的信息开放度：<b>纯量化</b>(只用因子，回测可信度高) → <b>+研报</b> → <b>+舆情</b>(联网检索，更全但无法回测复现)。量化是常开基底。</dd></div>
+        <div class="row"><dt>回测 vs 实盘</dt><dd>回测是「干净的因子归因」，用规则、可复现；实盘统筹由 AI 做、含你的真实操作。两者用<b>校准</b>对齐——实测纯量化档权重一致约 83%。</dd></div>
+      </div>
+
+      <div class="note">
+        ⚠️ <b>请先知道：</b>数据库为<b>纯 A股</b>(不含 ETF、港股，持仓里有也会被标注「未纳入统筹」)。
+        所有 AI 输出仅供研究参考，<b>不构成投资建议</b>，请自行复核后再决策。下单清单按现价估算，未计佣金/印花税/滑点。
+      </div>
+
+      <h3 class="sub">访问与密钥</h3>
+      <div class="deflist">
+        <div class="row"><dt>访问口令</dt><dd>对外分享时朋友需输入(默认 <code>susu2026</code>)，保护服务不被陌生人随意使用。</dd></div>
+        <div class="row"><dt>管理员密钥</dt><dd>今日策略 / 实盘周记 / 管理面板等涉及个人财务数据的页面需要(默认 <code>admin2026</code>)。持仓与周记只存在本机，不入库。</dd></div>
+      </div>
+    </section>
+
+  </main>
 
   <script>
     const input = document.getElementById("symbolInput");
     const btn = document.getElementById("analyzeBtn");
     const wrap = document.getElementById("resultWrap");
-    const spinner = document.getElementById("spinner");
     const statusText = document.getElementById("statusText");
     const steps = document.getElementById("steps");
     const resultBox = document.getElementById("resultBox");
     const disclaimerEl = document.getElementById("disclaimer");
 
-    function addStep(text) {
-      const li = document.createElement("li");
-      li.textContent = text;
-      steps.appendChild(li);
-    }
-
-    // 极简 markdown：## 标题、**加粗**
+    function addStep(t) { const li = document.createElement("li"); li.textContent = t; steps.appendChild(li); }
     function renderMarkdown(text) {
-      return text
-        .split("\n")
-        .map(line => {
-          const h = line.match(/^##\s+(.*)/);
-          if (h) return `<strong style="color:#38bdf8;display:block;margin:14px 0 4px;">${h[1]}</strong>`;
-          return line.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-        })
-        .join("\n");
+      return text.split("\n").map(line => {
+        const h = line.match(/^##\s+(.*)/);
+        if (h) return `<strong style="display:block;margin:16px 0 4px;">${h[1]}</strong>`;
+        return line.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+      }).join("\n");
     }
-
     input.addEventListener("keydown", e => { if (e.key === "Enter") analyze(); });
-
-    function quickFill(symbol) {
-      input.value = symbol;
-      input.focus();
-    }
+    function quickFill(s) { input.value = s; input.focus(); }
 
     async function analyze() {
       const symbol = input.value.trim();
       if (!symbol) { input.focus(); return; }
-
       btn.disabled = true;
-      wrap.classList.add("visible");
-      spinner.classList.add("active");
+      wrap.classList.add("show");
       statusText.textContent = "多 Agent 研究流水线运行中…";
-      steps.innerHTML = "";
-      resultBox.textContent = "";
-      resultBox.className = "result-box";
+      steps.innerHTML = ""; resultBox.textContent = ""; resultBox.className = "out";
       disclaimerEl.textContent = "";
-
       try {
         const res = await fetch("/api/analyze", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+          method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ symbol }),
         });
-
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
-
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          const chunk = decoder.decode(value);
-          for (const line of chunk.split("\n")) {
+          for (const line of decoder.decode(value).split("\n")) {
             if (!line.startsWith("data: ")) continue;
-            const payload = JSON.parse(line.slice(6));
-            if (payload.error) {
-              resultBox.textContent = payload.error;
-              resultBox.classList.add("error");
-            } else if (payload.progress) {
-              addStep(payload.progress);
-            } else if (payload.text) {
-              // 把免责声明拆出来单独展示
-              const disclaimerMark = "⚠️";
-              const idx = payload.text.indexOf(disclaimerMark);
-              const body = idx !== -1 ? payload.text.slice(0, idx).trim() : payload.text;
+            const p = JSON.parse(line.slice(6));
+            if (p.error) { resultBox.textContent = p.error; resultBox.classList.add("err"); }
+            else if (p.progress) addStep(p.progress);
+            else if (p.text) {
+              const i = p.text.indexOf("⚠️");
+              const body = i !== -1 ? p.text.slice(0, i).trim() : p.text;
               resultBox.innerHTML = renderMarkdown(body);
-              if (idx !== -1) disclaimerEl.textContent = payload.text.slice(idx).trim();
+              if (i !== -1) disclaimerEl.textContent = p.text.slice(i).trim();
             }
           }
         }
-      } catch (err) {
-        resultBox.textContent = "请求失败：" + err.message;
-        resultBox.classList.add("error");
-      } finally {
-        spinner.classList.remove("active");
-        statusText.textContent = "分析完成";
-        btn.disabled = false;
-      }
+      } catch (err) { resultBox.textContent = "请求失败：" + err.message; resultBox.classList.add("err"); }
+      finally { statusText.textContent = "分析完成"; btn.disabled = false; }
     }
   </script>
-  <script src="/mascot.js"></script>
+  <script src="/auth.js"></script>
 </body>
 </html>

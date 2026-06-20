@@ -27,7 +27,7 @@ app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 @app.after_request
 def _no_cache_assets(resp):
     p = request.path
-    if p == "/" or p.endswith((".js", ".html")):
+    if p == "/" or p.endswith((".js", ".html", ".css")):
         resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     return resp
 
