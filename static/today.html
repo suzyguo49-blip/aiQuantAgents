@@ -82,6 +82,14 @@
     .act-减仓, .act-清仓 { color: #f87171; border: 1px solid #f87171; }
     .risk-note { margin-top: 12px; font-size: 0.82rem; color: #f59e0b; line-height: 1.6;
       background: rgba(245,158,11,0.08); border: 1px solid #f59e0b; border-radius: 8px; padding: 10px 14px; }
+
+    /* 下单清单 */
+    .orders-title { margin: 22px 0 8px; font-size: 0.9rem; color: #cbd5e1; font-weight: 600; }
+    .o-buy { color: #4ade80; font-weight: 600; }
+    .o-sell { color: #f87171; font-weight: 600; }
+    .o-lots { font-variant-numeric: tabular-nums; }
+    .o-note { font-size: 0.74rem; color: #64748b; }
+    .o-cap { color: #f59e0b; }
   </style>
   <script src="/auth.js"></script>
   <script src="/owner.js"></script>
@@ -289,7 +297,34 @@
         <div class="name" style="margin-top:8px;font-size:0.78rem;">行业配置：${indStr}</div>
         ${p.info_sources ? `<div class="name" style="margin-top:4px;font-size:0.78rem;">参考信息源：${p.info_sources}</div>` : ""}
         ${p.risk_note ? `<div class="risk-note">⚠️ ${p.risk_note}</div>` : ""}
+        ${renderOrders(d.orders)}
         <div class="hint" style="margin-top:12px;">⚠️ AI 生成，仅供研究参考，不构成投资建议。请自行复核后再决策。</div>`;
+    }
+
+    function renderOrders(o) {
+      if (!o || !o.orders || o.orders.length === 0)
+        return `<div class="orders-title">📋 今日下单清单</div>
+          <div class="o-note">无需调仓（当前持仓已接近目标，或无可执行变动）。</div>`;
+      const rows = o.orders.map(x => {
+        const sideCls = x.side === "买入" ? "o-buy" : "o-sell";
+        const noteCls = x.note && x.note.indexOf("现金") !== -1 ? "o-note o-cap" : "o-note";
+        return `<tr>
+          <td class="${sideCls}">${x.side}</td>
+          <td>${x.symbol}</td><td class="name">${x.name}</td>
+          <td class="o-lots">${x.lots} 手<span class="o-note">（${x.shares}股）</span></td>
+          <td>${x.price}</td>
+          <td class="o-lots">${x.amount.toLocaleString("zh-CN")}</td>
+          <td class="${noteCls}">${x.note || ""}</td></tr>`;
+      }).join("");
+      const unpriced = (o.unpriced && o.unpriced.length)
+        ? `<div class="o-note o-cap" style="margin-top:6px;">⚠️ 无现价、未能计算：${o.unpriced.join("、")}</div>` : "";
+      return `<div class="orders-title">📋 今日下单清单（真实现价 · 100股整手 · 你的实际现金）</div>
+        <table><thead><tr><th>操作</th><th>代码</th><th>名称</th><th>数量</th><th>现价</th><th>金额(元)</th><th>说明</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        <div class="o-note" style="margin-top:8px;">
+          预计执行后剩余现金 ${o.cash_after.toLocaleString("zh-CN")} 元 ·
+          总资产估算 ${o.total_assets.toLocaleString("zh-CN")} 元 ·
+          金额按现价估算，未计佣金/印花税/滑点</div>`;
     }
 
     loadPortfolio();

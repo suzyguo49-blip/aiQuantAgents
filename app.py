@@ -10,6 +10,7 @@ from flask import Flask, request, jsonify, Response, stream_with_context
 
 import config
 import orchestrator
+import orders as orders_mod
 import portfolio_store
 from data_source import DataError, normalize_symbol, get_basic_info
 from quant.market_data import load_market_data
@@ -372,12 +373,21 @@ def today_plan():
 
         strat = AIStrategy(use_research=use_research, use_sentiment=use_sentiment)
         plan = strat.plan(sel["picks"], holdings, cash)
+
+        # 把百分比方案翻译成可执行下单清单（真实现价 + 100股整手 + 实际现金）
+        prices = {p["symbol"]: p["close"] for p in sel["picks"]}
+        for h in holdings:
+            if h["close"] is not None:
+                prices[h["symbol"]] = h["close"]
+        orders = orders_mod.build_orders(plan, holdings, cash, prices)
+
         return jsonify({
             "mode": mode,
             "fidelity": fidelity,
             "data_as_of": md_day,
             "cash": cash,
             "plan": plan,
+            "orders": orders,
         })
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
