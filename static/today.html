@@ -27,6 +27,12 @@
     .switch .base { color: var(--text-3); }
     .fidelity { font-size: 0.8rem; color: var(--text-3); }
     .fidelity b { color: var(--text); }
+    .active-factors { font-size: 0.8rem; color: var(--text-2); margin-top: 8px;
+      background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+      padding: 9px 13px; line-height: 1.6; }
+    .active-factors b { color: var(--text); }
+    .active-factors a { color: var(--accent); text-decoration: none; }
+    .active-factors a:hover { text-decoration: underline; }
 
     .plan-head { display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0 10px; font-size: 0.85rem; }
     .plan-head .chip { background: var(--surface); border: 1px solid var(--line);
@@ -129,6 +135,7 @@
       <label class="switch"><input type="checkbox" id="sw-sentiment" onchange="updateFidelity()" /> 📰 舆情</label>
     </div>
     <div class="fidelity" id="fidelity">当前组合：<b>纯量化</b> · 回测可信度 <b>高</b></div>
+    <div class="active-factors" id="activeFactors">正在读取当前因子组合…</div>
     <div class="toolbar">
       <button id="planBtn" onclick="generatePlan()">🚀 生成今日统筹方案</button>
       <span class="status" id="planStatus"></span>
@@ -155,6 +162,27 @@
       const el = document.getElementById("status");
       el.className = "status " + kind;
       el.textContent = msg;
+    }
+
+    // 展示今日策略将使用的因子组合（生成方案前就能看到）
+    async function loadActiveFactors() {
+      const box = document.getElementById("activeFactors");
+      try {
+        const [facs, jr] = await Promise.all([
+          fetch("/api/factors").then(r => r.json()),
+          fetch("/api/journal").then(r => r.ok ? r.json() : {}),
+        ]);
+        const labelOf = k => (facs.find(f => f.key === k) || {}).label || k;
+        const w = (jr && jr.current_weights) || null;
+        if (w && Object.keys(w).length) {
+          const list = Object.entries(w).map(([k, v]) => `${labelOf(k)} ${v}`).join(" · ");
+          box.innerHTML = `📌 本次将使用<b>本周组合</b>：${list}　<a href="/journal">改本周组合</a> · <a href="/backtest">去回测调</a>`;
+        } else {
+          const def = facs.filter(f => f.default_weight > 0)
+            .map(f => `${f.label} ${f.default_weight}`).join(" · ");
+          box.innerHTML = `🧮 你还没存本周组合，本次将用<b>默认因子</b>：${def}　<a href="/backtest">去回测调一版并存为本周组合</a>`;
+        }
+      } catch (e) { box.textContent = "（因子组合读取失败，生成方案时仍会按优先级自动选用）"; }
     }
 
     async function loadPortfolio() {
@@ -373,6 +401,7 @@
     }
 
     loadPortfolio();
+    loadActiveFactors();
   </script>
 </body>
 </html>
