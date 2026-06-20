@@ -3,95 +3,44 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>选股工作台 · A股量化系统</title>
+  <title>选股工作台 · SUSU 量化</title>
+  <link rel="stylesheet" href="/style.css" />
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #0f1117; color: #e2e8f0; padding: 32px 16px 80px;
-      max-width: 1080px; margin: 0 auto;
-    }
-    header { text-align: center; margin-bottom: 22px; }
-    header h1 {
-      font-size: 1.8rem; font-weight: 700;
-      background: linear-gradient(135deg, #38bdf8, #818cf8);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-    }
-    .nav { text-align: center; margin-bottom: 24px; font-size: 0.88rem; }
-    .nav a { color: #64748b; text-decoration: none; margin: 0 10px; }
-    .nav a:hover, .nav a.active { color: #38bdf8; }
-
-    .card {
-      background: #1e2130; border: 1px solid #2d3148; border-radius: 14px;
-      padding: 20px; margin-bottom: 22px;
-    }
-    .card h2 { font-size: 0.95rem; color: #cbd5e1; margin-bottom: 14px; font-weight: 600; }
-
-    .factor {
-      display: grid; grid-template-columns: 28px 150px 1fr 56px; align-items: center;
-      gap: 12px; padding: 9px 0; border-bottom: 1px solid #2d3148;
-    }
-    .factor:last-child { border-bottom: none; }
-    .factor input[type=checkbox] { width: 17px; height: 17px; accent-color: #38bdf8; }
-    .factor .fname { font-size: 0.9rem; font-weight: 600; }
-    .factor .fdesc { font-size: 0.74rem; color: #64748b; }
-    .factor input[type=range] { width: 100%; accent-color: #818cf8; }
-    .factor .wval { font-size: 0.84rem; color: #38bdf8; text-align: right; font-variant-numeric: tabular-nums; }
-    .factor.off { opacity: 0.4; }
-
-    .toolbar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 16px; }
-    .field { display: flex; flex-direction: column; gap: 4px; }
-    .field label { font-size: 0.74rem; color: #64748b; }
-    .field input {
-      background: #0f1117; border: 1px solid #2d3148; border-radius: 8px;
-      color: #e2e8f0; padding: 8px 10px; font-size: 0.9rem; width: 90px; outline: none;
-    }
-    .field input:focus { border-color: #38bdf8; }
-    .wsum { font-size: 0.8rem; color: #64748b; }
-    button {
-      background: linear-gradient(135deg, #38bdf8, #818cf8); border: none; border-radius: 8px;
-      color: #0f1117; cursor: pointer; font-size: 0.9rem; font-weight: 600;
-      padding: 9px 22px; transition: opacity 0.2s;
-    }
-    button:hover { opacity: 0.88; }
-    button:disabled { opacity: 0.4; cursor: not-allowed; }
-    button.ghost { background: transparent; border: 1px solid #38bdf8; color: #38bdf8; padding: 5px 12px; font-size: 0.78rem; }
-
-    .status { color: #64748b; font-size: 0.88rem; margin: 8px 0 16px; min-height: 18px; }
-    .error { color: #f87171; }
-
-    table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
-    th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid #2d3148; white-space: nowrap; }
-    th { color: #64748b; font-weight: 500; font-size: 0.74rem; }
-    td.score { color: #38bdf8; font-weight: 600; }
+    .wrap { max-width: 1080px; }
+    .wsum { font-size: 0.8rem; color: var(--text-3); }
+    .field input { width: 110px; }
+    table { font-size: 0.86rem; }
+    th, td { white-space: nowrap; padding: 10px 8px; }
+    td.score { color: var(--accent); font-weight: 600; }
     .fcell { font-variant-numeric: tabular-nums; }
-    .fpos { color: #4ade80; } .fneg { color: #f87171; } .fnan { color: #475569; }
-    .hidden { display: none; }
-
-    .plan {
-      margin-top: 10px; background: #0f1117; border: 1px solid #2d3148;
-      border-radius: 10px; padding: 14px 18px; white-space: pre-wrap;
-      line-height: 1.7; font-size: 0.9rem; color: #cbd5e1;
-    }
-    .plan strong { color: #38bdf8; }
-    .plan .dim { color: #64748b; }
-    .steps { list-style: none; font-size: 0.8rem; color: #94a3b8; margin: 6px 0; }
+    .fpos { color: #15803d; } .fneg { color: #b91c1c; } .fnan { color: var(--text-3); }
+    .plan { margin-top: 10px; background: var(--surface); border: 1px solid var(--line);
+      border-radius: var(--radius); padding: 14px 18px; white-space: pre-wrap;
+      line-height: 1.75; font-size: 0.9rem; color: var(--text-2); }
+    .plan strong { color: var(--text); font-weight: 600; }
+    .plan .dim { color: var(--text-3); }
+    .steps { list-style: none; font-size: 0.8rem; color: var(--text-3); margin: 6px 0; }
     .steps li { padding: 2px 0 2px 18px; position: relative; }
-    .steps li::before { content: "✓"; color: #38bdf8; position: absolute; left: 0; }
+    .steps li::before { content: "—"; color: var(--text-3); position: absolute; left: 0; }
   </style>
   <script src="/auth.js"></script>
 </head>
 <body>
-  <header><h1>选股工作台</h1></header>
-  <div class="nav">
-    <a href="/">个股 AI 研究</a>
-    <a href="/select" class="active">选股工作台</a>
-    <a href="/backtest">策略回测</a>
-    <a href="/today">今日策略</a>
-    <a href="/journal">实盘周记</a>
-  </div>
+  <main class="wrap">
+  <header class="page-head">
+    <div class="eyebrow">SUSU 量化</div>
+    <h1 class="title">选股工作台</h1>
+    <nav class="nav">
+      <a href="/">个股 AI 研究</a>
+      <a href="/select" class="active">选股工作台</a>
+      <a href="/backtest">策略回测</a>
+      <a href="/today">今日策略</a>
+      <a href="/journal">实盘周记</a>
+      <a href="/admin">管理面板</a>
+    </nav>
+  </header>
 
-  <div class="card">
+  <div class="card" style="margin-top:32px;">
     <h2>① 选择因子 & 调整权重</h2>
     <div id="factorList"></div>
     <div class="toolbar">
@@ -112,10 +61,11 @@
         <tbody></tbody>
       </table>
     </div>
-    <p style="font-size:0.76rem;color:#64748b;margin-top:10px;">
+    <p style="font-size:0.76rem;color:var(--text-3);margin-top:10px;">
       因子列为横截面 z 分（越高越强）。点"AI 交易计划"由多 Agent 团队给出次日买卖点。
     </p>
   </div>
+  </main>
 
   <script>
     let FACTORS = [];

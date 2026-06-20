@@ -109,3 +109,59 @@ td { color: var(--text-2); }
 .steps-flow .arrow { color: var(--text-3); }
 
 ::selection { background: #e6edff; }
+
+/* ============================================================
+   共享组件（功能页通用）—— 全部遵循极简：白底、细线、单一强调色
+   ============================================================ */
+
+/* 居中标题区(功能页) */
+.page-head { margin-bottom: 4px; }
+.page-head .title { font-size: 1.7rem; }
+
+/* 卡片 —— 白底 + 细线，无阴影 */
+.card { background: var(--bg); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 22px 24px; margin-bottom: 20px; }
+.card > h2 { font-size: 1.05rem; margin-bottom: 16px; font-weight: 600; }
+
+/* 主行动按钮 —— 近黑填充；次要用 .ghost 描边 */
+button:not(.chip) {
+  font: inherit; font-size: 0.92rem; font-weight: 500; line-height: 1;
+  color: #fff; background: var(--text); border: 1px solid var(--text);
+  border-radius: var(--radius); padding: 10px 20px; cursor: pointer;
+  transition: background var(--ease), color var(--ease), border-color var(--ease), opacity var(--ease);
+}
+button:not(.chip):hover { background: #000; }
+button:not(.chip):disabled { background: var(--bg); color: var(--text-3);
+  border-color: var(--line); cursor: not-allowed; }
+button.ghost { background: var(--bg); color: var(--text); border-color: var(--line-strong); }
+button.ghost:hover { background: var(--bg); border-color: var(--text); }
+
+/* 表单字段 */
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field label { font-size: 0.76rem; color: var(--text-3); }
+.field input, .field select {
+  background: var(--bg); border: 1px solid var(--line-strong); border-radius: var(--radius);
+  color: var(--text); padding: 9px 12px; font-size: 0.92rem; outline: none;
+  transition: border-color var(--ease);
+}
+.field input:focus, .field select:focus { border-color: var(--accent); }
+.toolbar { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; margin-top: 16px; }
+
+/* 因子滑块行 */
+.factor { display: grid; grid-template-columns: 24px 150px 1fr 52px; align-items: center;
+  gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.factor:last-child { border-bottom: none; }
+.factor input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
+.factor .fname { font-size: 0.9rem; font-weight: 600; color: var(--text); }
+.factor .fdesc { font-size: 0.74rem; color: var(--text-3); }
+.factor input[type=range] { width: 100%; accent-color: var(--accent); }
+.factor .wval { font-size: 0.84rem; color: var(--accent); text-align: right;
+  font-variant-numeric: tabular-nums; }
+.factor.off { opacity: 0.4; }
+
+/* 状态行 */
+.status { color: var(--text-3); font-size: 0.88rem; min-height: 18px; }
+.status.ok { color: #15803d; }
+.status.error, .error { color: #b91c1c; }
+
+.hidden { display: none; }

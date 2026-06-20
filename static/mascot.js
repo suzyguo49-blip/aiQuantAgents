@@ -64,28 +64,26 @@
   #susu-widget { position: fixed; right: 22px; bottom: 22px; z-index: 9999;
     display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-  #susu-bubble { max-width: 280px; background: #1e2130; border: 1px solid #2d3148;
-    border-radius: 14px; padding: 14px 16px; color: #e2e8f0; font-size: 0.86rem;
-    line-height: 1.6; box-shadow: 0 8px 28px rgba(0,0,0,0.45);
-    opacity: 0; transform: translateY(8px) scale(0.96); pointer-events: none;
-    transition: all 0.22s ease; }
-  #susu-bubble.show { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
-  #susu-bubble .q { color: #cbd5e1; }
-  #susu-bubble .a { color: #38bdf8; font-size: 0.78rem; margin-top: 8px; text-align: right; }
+  #susu-bubble { max-width: 280px; background: #ffffff; border: 1px solid #ececec;
+    border-radius: 12px; padding: 14px 16px; color: #18181b; font-size: 0.86rem;
+    line-height: 1.6; box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    opacity: 0; transform: translateY(6px); pointer-events: none;
+    transition: opacity 0.22s ease, transform 0.22s ease; }
+  #susu-bubble.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+  #susu-bubble .q { color: #52525b; }
+  #susu-bubble .a { color: #2563eb; font-size: 0.78rem; margin-top: 8px; text-align: right; }
   #susu-bubble::after { content: ""; position: absolute; right: 30px; bottom: -8px;
-    width: 14px; height: 14px; background: #1e2130; border-right: 1px solid #2d3148;
-    border-bottom: 1px solid #2d3148; transform: rotate(45deg); }
+    width: 14px; height: 14px; background: #ffffff; border-right: 1px solid #ececec;
+    border-bottom: 1px solid #ececec; transform: rotate(45deg); }
   #susu-btn { display: flex; align-items: center; gap: 8px; cursor: pointer;
-    background: #1e2130; border: 1px solid #2d3148; border-radius: 40px;
-    padding: 5px 14px 5px 5px; box-shadow: 0 6px 20px rgba(0,0,0,0.4);
-    transition: transform 0.18s ease, border-color 0.18s; }
-  #susu-btn:hover { transform: translateY(-2px); border-color: #38bdf8; }
-  #susu-btn svg { width: 46px; height: 46px; border-radius: 50%;
-    border: 2px solid #38bdf8; flex-shrink: 0; }
-  #susu-btn .name { font-weight: 700; font-size: 0.92rem;
-    background: linear-gradient(135deg, #38bdf8, #818cf8);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-  #susu-btn .role { display:block; font-size: 0.66rem; color: #64748b; font-weight: 400; }
+    background: #ffffff; border: 1px solid #d4d4d8; border-radius: 40px;
+    padding: 5px 14px 5px 5px; box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    transition: border-color 0.18s ease; }
+  #susu-btn:hover { border-color: #18181b; }
+  #susu-btn svg { width: 44px; height: 44px; border-radius: 50%;
+    border: 1px solid #ececec; flex-shrink: 0; }
+  #susu-btn .name { font-weight: 600; font-size: 0.92rem; color: #18181b; }
+  #susu-btn .role { display:block; font-size: 0.66rem; color: #9ca3af; font-weight: 400; }
   `;
 
   function init() {

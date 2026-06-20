@@ -3,67 +3,40 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>实盘周记 · SUSU 量化系统</title>
+  <title>实盘周记 · SUSU 量化</title>
+  <link rel="stylesheet" href="/style.css" />
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #0f1117; color: #e2e8f0; padding: 32px 16px 80px; max-width: 1040px; margin: 0 auto; }
-    header { text-align: center; margin-bottom: 22px; }
-    header h1 { font-size: 1.8rem; font-weight: 700;
-      background: linear-gradient(135deg, #38bdf8, #818cf8);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-    .nav { text-align: center; margin-bottom: 24px; font-size: 0.88rem; }
-    .nav a { color: #64748b; text-decoration: none; margin: 0 10px; }
-    .nav a:hover, .nav a.active { color: #38bdf8; }
-    .card { background: #1e2130; border: 1px solid #2d3148; border-radius: 14px; padding: 20px; margin-bottom: 22px; }
-    .card h2 { font-size: 0.95rem; color: #cbd5e1; margin-bottom: 6px; font-weight: 600; }
-    .card .hint { font-size: 0.76rem; color: #64748b; margin-bottom: 14px; line-height: 1.6; }
-
-    .factor { display: grid; grid-template-columns: 26px 140px 1fr 50px; align-items: center;
-      gap: 10px; padding: 7px 0; border-bottom: 1px solid #2d3148; }
-    .factor:last-child { border-bottom: none; }
-    .factor input[type=checkbox] { width: 16px; height: 16px; accent-color: #38bdf8; }
-    .factor .fname { font-size: 0.86rem; font-weight: 600; }
-    .factor .fdesc { font-size: 0.72rem; color: #64748b; }
-    .factor input[type=range] { width: 100%; accent-color: #818cf8; }
-    .factor .wval { font-size: 0.82rem; color: #38bdf8; text-align: right; font-variant-numeric: tabular-nums; }
-    .factor.off { opacity: 0.4; }
-
-    .field { display: flex; flex-direction: column; gap: 5px; }
-    .field label { font-size: 0.74rem; color: #64748b; }
-    input[type=text], input[type=number] { background: #0f1117; border: 1px solid #2d3148;
-      border-radius: 8px; color: #e2e8f0; padding: 8px 10px; font-size: 0.9rem; outline: none; }
-    input:focus { border-color: #38bdf8; }
-    .toolbar { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-top: 14px; }
-    button { background: linear-gradient(135deg, #38bdf8, #818cf8); border: none; border-radius: 8px;
-      color: #0f1117; cursor: pointer; font-size: 0.9rem; font-weight: 600; padding: 9px 18px; }
-    button:hover { opacity: 0.88; } button:disabled { opacity: 0.4; cursor: not-allowed; }
-    button.ghost { background: transparent; border: 1px solid #38bdf8; color: #38bdf8; }
-    .status { color: #64748b; font-size: 0.85rem; min-height: 18px; }
-    .status.ok { color: #4ade80; } .status.error { color: #f87171; }
-
-    table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
-    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #2d3148; white-space: nowrap; }
-    th { color: #64748b; font-weight: 500; font-size: 0.74rem; }
-    .pos { color: #4ade80; font-weight: 600; } .neg { color: #f87171; font-weight: 600; }
-    .wtags { font-size: 0.76rem; color: #94a3b8; white-space: normal; }
-    .empty { color: #64748b; text-align: center; padding: 18px; font-size: 0.85rem; }
+    .wrap { max-width: 1040px; }
+    .card .hint { font-size: 0.8rem; color: var(--text-3); margin-bottom: 14px; line-height: 1.7; }
+    .factor { grid-template-columns: 24px 140px 1fr 50px; }
+    th, td { white-space: nowrap; }
+    .pos { color: #15803d; font-weight: 600; } .neg { color: #b91c1c; font-weight: 600; }
+    .wtags { font-size: 0.78rem; color: var(--text-2); white-space: normal; }
+    .empty { color: var(--text-3); text-align: center; padding: 18px; font-size: 0.85rem; }
   </style>
   <script src="/auth.js"></script>
   <script src="/owner.js"></script>
 </head>
 <body>
-  <header><h1>📓 实盘周记</h1></header>
-  <div class="nav">
-    <a href="/">个股 AI 研究</a><a href="/select">选股工作台</a><a href="/backtest">策略回测</a>
-    <a href="/today">今日策略</a><a href="/journal" class="active">实盘周记</a><a href="/admin">管理面板</a>
-  </div>
+  <main class="wrap">
+  <header class="page-head">
+    <div class="eyebrow">SUSU 量化</div>
+    <h1 class="title">实盘周记</h1>
+    <nav class="nav">
+      <a href="/">个股 AI 研究</a>
+      <a href="/select">选股工作台</a>
+      <a href="/backtest">策略回测</a>
+      <a href="/today">今日策略</a>
+      <a href="/journal" class="active">实盘周记</a>
+      <a href="/admin">管理面板</a>
+    </nav>
+  </header>
 
   <!-- ① 本周因子权重 -->
-  <div class="card">
+  <div class="card" style="margin-top:32px;">
     <h2>① 本周因子组合</h2>
     <div class="hint">
-      建议先在 <a href="/backtest" style="color:#38bdf8;">策略回测</a> 验证哪组权重历史表现好，再来这里定本周组合。
+      建议先在 <a href="/backtest" class="link">策略回测</a> 验证哪组权重历史表现好，再来这里定本周组合。
       保存后，<b>今日策略会自动用这组权重</b>（重开服务也在）。同一天重复保存覆盖当天。
     </div>
     <div id="factorList"></div>
@@ -100,6 +73,7 @@
     </div>
     <div id="weeklyTable"></div>
   </div>
+  </main>
 
   <script>
     let FACTORS = [];
