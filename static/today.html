@@ -39,6 +39,25 @@
     .o-lots { font-variant-numeric: tabular-nums; }
     .o-note { font-size: 0.76rem; color: var(--text-3); }
     .o-cap { color: #92400e; }
+
+    /* 研报/舆情来源 */
+    .src-box { margin-top: 12px; background: var(--surface); border: 1px solid var(--line);
+      border-radius: var(--radius); padding: 12px 16px; }
+    .src-title { font-size: 0.82rem; color: var(--text-2); font-weight: 600; margin-bottom: 8px; }
+    .src-list { list-style: none; display: flex; flex-direction: column; gap: 5px; }
+    .src-link { color: var(--accent); text-decoration: none; font-size: 0.84rem;
+      border-bottom: 1px solid transparent; }
+    .src-link:hover { border-bottom-color: var(--accent); }
+    .hidden { display: none; }
+
+    /* 单股 Agent 分析展开 */
+    .agent-steps { margin-bottom: 8px; }
+    .agent-step { font-size: 0.78rem; color: var(--text-3); padding: 2px 0 2px 16px; position: relative; }
+    .agent-step::before { content: "—"; position: absolute; left: 0; color: var(--text-3); }
+    .agent-out { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+      padding: 12px 16px; font-size: 0.86rem; line-height: 1.7; color: var(--text-2); white-space: pre-wrap; }
+    .agent-out.dim { color: var(--text-3); }
+    .agent-out strong { color: var(--text); }
   </style>
   <script src="/auth.js"></script>
   <script src="/owner.js"></script>
@@ -233,11 +252,16 @@
       const allocs = p.allocations || [];
       const rows = allocs.map(a => {
         const act = a.action || "持有";
+        const sym = a.symbol || "";
+        const rid = "ag-" + sym.replace(/\./g, "_");
         return `<tr>
-          <td>${a.symbol || ""}</td><td class="name">${a.name || ""}</td>
+          <td>${sym}</td><td class="name">${a.name || ""}</td>
           <td><span class="act act-${act}">${act}</span></td>
           <td>${a.target_weight_pct != null ? a.target_weight_pct + "%" : "—"}</td>
-          <td class="name">${a.reason || ""}</td></tr>`;
+          <td class="name">${a.reason || ""}</td>
+          <td>${sym ? `<button class="ghost" style="padding:4px 10px;font-size:0.76rem;"
+            onclick="stockAgent('${sym}','${(a.name||"").replace(/'/g,"")}',this)">Agent 分析</button>` : ""}</td></tr>
+          <tr id="${rid}" class="hidden"><td colspan="6"></td></tr>`;
       }).join("");
       const ind = p.industry_allocation || {};
       const indStr = Object.entries(ind).map(([k, v]) => `${k} ${v}%`).join(" · ") || "—";
@@ -248,14 +272,63 @@
           <span class="chip">总体风格 <b>${p.total_risk || "—"}</b></span>
           <span class="chip">建议留现金 <b>${p.cash_reserve_pct != null ? p.cash_reserve_pct + "%" : "—"}</b></span>
         </div>
-        <table><thead><tr><th>代码</th><th>名称</th><th>操作</th><th>目标仓位</th><th>依据</th></tr></thead>
+        <table><thead><tr><th>代码</th><th>名称</th><th>操作</th><th>目标仓位</th><th>依据</th><th></th></tr></thead>
           <tbody>${rows}</tbody></table>
         <div class="name" style="margin-top:8px;font-size:0.78rem;">行业配置：${indStr}</div>
         ${p.info_sources ? `<div class="name" style="margin-top:4px;font-size:0.78rem;">参考信息源：${p.info_sources}</div>` : ""}
+        ${renderSources(p.sources)}
         ${p.risk_note ? `<div class="risk-note">⚠️ ${p.risk_note}</div>` : ""}
         ${renderUncovered(d.uncovered)}
         ${renderOrders(d.orders)}
         <div class="hint" style="margin-top:12px;">⚠️ AI 生成，仅供研究参考，不构成投资建议。请自行复核后再决策。</div>`;
+    }
+
+    function renderSources(sources) {
+      if (!sources || sources.length === 0) return "";
+      const items = sources.map((s, i) =>
+        `<li><a href="${s.url}" target="_blank" rel="noopener" class="src-link">${i + 1}. ${s.title}</a>${s.site ? ` <span class="o-note">· ${s.site}</span>` : ""}</li>`
+      ).join("");
+      return `<div class="src-box"><div class="src-title">📎 研报/舆情来源（联网检索，请点开核实原文）</div><ul class="src-list">${items}</ul></div>`;
+    }
+
+    // 单只股票的多 Agent 分析（技术/基本面/资金/风控 + 多空辩论 + 主管），按需触发
+    async function stockAgent(symbol, name, btn) {
+      const rid = "ag-" + symbol.replace(/\./g, "_");
+      const row = document.getElementById(rid);
+      const cell = row.querySelector("td");
+      if (row.classList.contains("hidden")) row.classList.remove("hidden");
+      else { row.classList.add("hidden"); return; }   // 再点收起
+      btn.disabled = true;
+      cell.innerHTML = `<div class="agent-steps" id="st-${rid}"></div><div class="agent-out dim">AI 分析师团队分析中…</div>`;
+      const stepsEl = document.getElementById("st-" + rid);
+      const outEl = cell.querySelector(".agent-out");
+      try {
+        const res = await fetch("/api/analyze", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ symbol, mode: "trading" }),
+        });
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          for (const line of decoder.decode(value).split("\n")) {
+            if (!line.startsWith("data: ")) continue;
+            const pl = JSON.parse(line.slice(6));
+            if (pl.error) { outEl.className = "agent-out"; outEl.textContent = "分析失败：" + pl.error; }
+            else if (pl.progress) { const li = document.createElement("div"); li.className = "agent-step"; li.textContent = pl.progress; stepsEl.appendChild(li); }
+            else if (pl.text) { outEl.className = "agent-out"; outEl.innerHTML = mdToHtml(pl.text); }
+          }
+        }
+      } catch (e) { outEl.className = "agent-out"; outEl.textContent = "请求失败：" + e.message; }
+      finally { btn.disabled = false; }
+    }
+    function mdToHtml(text) {
+      return text.split("\n").map(l => {
+        const h = l.match(/^##\s+(.*)/);
+        if (h) return `<strong style="display:block;margin:10px 0 3px;">${h[1]}</strong>`;
+        return l.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+      }).join("\n");
     }
 
     function renderUncovered(u) {

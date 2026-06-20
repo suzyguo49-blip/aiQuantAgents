@@ -253,7 +253,7 @@ def run_portfolio(
     if use_search:
         emit("联网检索研报/舆情中…")
     emit("投资组合经理统筹今日仓位方案…")
-    resp = Generation.call(
+    call_kwargs = dict(
         model=config.ORCHESTRATOR_MODEL,
         messages=[
             {"role": "system", "content": _build_portfolio_system(use_research, use_sentiment)},
@@ -263,14 +263,46 @@ def run_portfolio(
         max_tokens=3000,
         enable_search=use_search,   # 研报/舆情档启用通义千问联网检索
     )
+    if use_search:
+        # message 格式才会回检索来源(search_info)；forced_search 确保开了开关就真的去搜
+        call_kwargs["result_format"] = "message"
+        call_kwargs["search_options"] = {"enable_source": True, "forced_search": True}
+    resp = Generation.call(**call_kwargs)
     if resp.status_code != 200:
         raise Exception(f"阿里云 API 错误 {resp.status_code}: {resp.message}")
 
     try:
-        plan = _strip_json(resp.output.text)
-    except (json.JSONDecodeError, IndexError) as e:
+        plan = _strip_json(_resp_text(resp))
+    except (json.JSONDecodeError, IndexError, KeyError) as e:
         raise Exception(f"统筹方案解析失败（模型未返回合法 JSON）：{e}")
+
+    plan["sources"] = _extract_sources(resp) if use_search else []
     return plan
+
+
+def _resp_text(resp) -> str:
+    """从 text 格式或 message 格式的返回里取出文本。"""
+    out = resp.output
+    txt = out.get("text") if hasattr(out, "get") else getattr(out, "text", None)
+    if txt:
+        return txt
+    return out["choices"][0]["message"]["content"]
+
+
+def _extract_sources(resp) -> list[dict]:
+    """从联网检索结果里抽取来源 [{title, url, site}]，容错处理不同返回结构。"""
+    out = resp.output
+    info = out.get("search_info") if hasattr(out, "get") else getattr(out, "search_info", None)
+    if not info:
+        return []
+    results = info.get("search_results") if hasattr(info, "get") else getattr(info, "search_results", None)
+    sources = []
+    for r in (results or []):
+        get = r.get if hasattr(r, "get") else (lambda k, d=None: getattr(r, k, d))
+        url = get("url")
+        if url:
+            sources.append({"title": get("title") or url, "url": url, "site": get("site_name") or ""})
+    return sources
 
 
 if __name__ == "__main__":
