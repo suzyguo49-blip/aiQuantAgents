@@ -13,7 +13,7 @@ import orchestrator
 import portfolio_store
 from data_source import DataError, normalize_symbol, get_basic_info
 from quant.market_data import load_market_data
-from quant.strategy import Strategy
+from quant.strategy import Strategy, AIStrategy
 from quant.backtest import Backtester
 from quant import factors
 
@@ -114,48 +114,54 @@ def list_factors():
     ])
 
 
+def _run_selection(weights: dict, top_k: int, as_of: str | None) -> dict:
+    """选股核心：因子打分 → top-N + 各因子拆解。供 /api/select 与今日统筹共用。"""
+    cfg = factors.build_factor_config(weights)
+    if not cfg:
+        raise ValueError("请至少启用一个因子并设置正权重")
+
+    base = pd.Timestamp(as_of) if as_of else pd.Timestamp.today()
+    load_start = (base - pd.Timedelta(days=180)).strftime("%Y-%m-%d")
+    md = _get_market_data(load_start, as_of)
+    strat = Strategy(top_k=top_k)
+    scores = factors.composite_score(md, cfg)
+    tradable = md.tradable_mask()
+    day = md.dates[-1] if not as_of else pd.Timestamp(as_of)
+
+    picks = strat.select(scores.loc[day], tradable.loc[day], md.industries)
+    syms = list(picks.keys())
+    breakdown = factors.score_breakdown(md, cfg, day, syms)
+    closes = md.close.loc[day]
+    score_row = scores.loc[day]
+
+    result = [{
+        "symbol": s,
+        "name": md.names.get(s, s),
+        "industry": md.industries.get(s, ""),
+        "score": round(float(score_row.get(s)), 3),
+        "close": round(float(closes.get(s)), 2),
+        "weight": round(picks[s], 4),
+        "factors": breakdown[s],
+    } for s in syms]
+    return {
+        "as_of": day.strftime("%Y-%m-%d"),
+        "factor_keys": list(cfg.keys()),
+        "picks": result,
+    }
+
+
 @app.route("/api/select", methods=["POST"])
 def select_stocks():
     """按用户自定义的因子权重选股，返回 top-N + 各因子拆解。"""
     data = request.get_json() or {}
-    weights = data.get("weights") or {}
-    top_k = int(data.get("top_k", 10))
-    as_of = data.get("as_of") or None
-
-    cfg = factors.build_factor_config(weights)
-    if not cfg:
-        return jsonify({"error": "请至少启用一个因子并设置正权重"}), 400
-
-    # 选股只需因子回看窗口，往前留 180 天
-    base = pd.Timestamp(as_of) if as_of else pd.Timestamp.today()
-    load_start = (base - pd.Timedelta(days=180)).strftime("%Y-%m-%d")
     try:
-        md = _get_market_data(load_start, as_of)
-        strat = Strategy(top_k=top_k)
-        scores = factors.composite_score(md, cfg)
-        tradable = md.tradable_mask()
-        day = md.dates[-1] if not as_of else pd.Timestamp(as_of)
-
-        picks = strat.select(scores.loc[day], tradable.loc[day], md.industries)
-        syms = list(picks.keys())
-        breakdown = factors.score_breakdown(md, cfg, day, syms)
-        closes = md.close.loc[day]
-        score_row = scores.loc[day]
-
-        result = [{
-            "symbol": s,
-            "name": md.names.get(s, s),
-            "industry": md.industries.get(s, ""),
-            "score": round(float(score_row.get(s)), 3),
-            "close": round(float(closes.get(s)), 2),
-            "weight": round(picks[s], 4),
-            "factors": breakdown[s],
-        } for s in syms]
-        return jsonify({
-            "as_of": day.strftime("%Y-%m-%d"),
-            "factor_keys": list(cfg.keys()),
-            "picks": result,
-        })
+        return jsonify(_run_selection(
+            data.get("weights") or {},
+            int(data.get("top_k", 10)),
+            data.get("as_of") or None,
+        ))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -282,6 +288,62 @@ def portfolio_api():
         except Exception:
             h["name"] = ""
     return jsonify(pf)
+
+
+@app.route("/api/today/plan", methods=["POST"])
+def today_plan():
+    """实盘今日：用真实持仓 + 现金 + 选股候选，由 AI 统筹出仓位方案（需管理员密钥）。"""
+    gate = _admin_gate()
+    if gate:
+        return jsonify(gate[0]), gate[1]
+
+    data = request.get_json() or {}
+    use_research = bool(data.get("use_research"))
+    use_sentiment = bool(data.get("use_sentiment"))
+    if use_research or use_sentiment:
+        return jsonify({"error": "研报/舆情档尚未接入数据源，当前仅支持纯量化档"}), 400
+
+    pf = portfolio_store.load_portfolio()
+    cash = float(pf.get("cash") or 0)
+    top_k = int(data.get("top_k", 10))
+    # 留空=用因子库默认权重选股
+    weights = data.get("weights") or {
+        k: v["default_weight"]
+        for k, v in factors.FACTOR_LIBRARY.items() if v["default_weight"] > 0
+    }
+
+    try:
+        sel = _run_selection(weights, top_k, None)
+
+        # 给当前持仓补上名称与最新价（供主管换算市值/处置）
+        md_day = sel["as_of"]
+        load_start = (pd.Timestamp(md_day) - pd.Timedelta(days=10)).strftime("%Y-%m-%d")
+        md = _get_market_data(load_start, None)
+        closes = md.close.loc[md.dates[-1]]
+        holdings = []
+        for h in pf.get("holdings", []):
+            s = h["symbol"]
+            close = closes.get(s)
+            holdings.append({
+                "symbol": s,
+                "name": md.names.get(s, s),
+                "shares": h["shares"],
+                "close": round(float(close), 2) if close is not None and pd.notna(close) else None,
+            })
+
+        strat = AIStrategy(use_research=use_research, use_sentiment=use_sentiment)
+        plan = strat.plan(sel["picks"], holdings, cash)
+        return jsonify({
+            "mode": "纯量化",
+            "fidelity": "高",
+            "data_as_of": md_day,
+            "cash": cash,
+            "plan": plan,
+        })
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/admin/stats")

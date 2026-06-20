@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import json
 from concurrent.futures import ThreadPoolExecutor
 
 from dashscope import Generation
@@ -141,6 +142,112 @@ def run(user_request: str, symbol: str, progress=None, mode: str = "research") -
     if resp.status_code == 200:
         return resp.output.text
     raise Exception(f"阿里云 API 错误 {resp.status_code}: {resp.message}")
+
+
+# ============ 投资组合统筹（实盘"今日" · AIStrategy 内核）============
+# 关键约束：只跑一次 AI；候选股的量化因子已算好，直接喂给主管做配置决策。
+# AI 不进回测热循环（见 quant/strategy.py 的 PositionPolicy 契约）。
+
+PORTFOLIO_QUANT_SYSTEM = """你是一位严谨的 A股投资组合经理，负责统筹「今日」的仓位配置。
+
+【纪律 · 纯量化模式】你只能依据下方提供的量化数据(因子 z 分、价格、行业、当前持仓、现金)做判断。
+**严禁编造或引用任何新闻、研报、传闻、市场情绪**——这些数据你没有，编造即违规。
+
+你的任务：给出今日的目标仓位方案，统筹考虑：
+- 因子强弱(综合分/各因子 z 分越高越强)
+- 行业分散(避免单一行业过度集中)
+- 当前持仓的处置(继续持有/加仓/减仓/清仓)
+- 保留合理现金缓冲(不必满仓)
+
+**只输出一个 JSON 对象**(不要任何解释文字、不要 markdown 代码围栏)，结构：
+{
+  "total_risk": "保守/中性/积极 之一，并附半句理由",
+  "cash_reserve_pct": 数字(建议保留现金占总资产百分比),
+  "allocations": [
+    {
+      "symbol": "sh.600519",
+      "name": "贵州茅台",
+      "action": "建仓/加仓/持有/减仓/清仓 之一",
+      "target_weight_pct": 数字(目标仓位占总资产百分比),
+      "reason": "一句话，仅引用量化依据"
+    }
+  ],
+  "industry_allocation": {"行业名": 百分比},
+  "risk_note": "1-2句最关键的风险提示"
+}
+所有 target_weight_pct 加上 cash_reserve_pct 应约等于 100。当前持有但你建议清仓的股票，也要列出且 action=清仓、target_weight_pct=0。"""
+
+
+def _strip_json(text: str) -> dict:
+    """从模型输出里抠出 JSON 对象，容忍 ```json 围栏与前后赘述。"""
+    t = text.strip()
+    if t.startswith("```"):
+        t = t.split("```", 2)[1]
+        if t.startswith("json"):
+            t = t[4:]
+    # 退而求其次：截取第一个 { 到最后一个 }
+    if not t.lstrip().startswith("{"):
+        s, e = t.find("{"), t.rfind("}")
+        if s != -1 and e != -1:
+            t = t[s:e + 1]
+    return json.loads(t)
+
+
+def run_portfolio(
+    candidates: list[dict],
+    holdings: list[dict],
+    cash: float,
+    use_research: bool = False,
+    use_sentiment: bool = False,
+    progress=None,
+) -> dict:
+    """投资组合经理统筹今日仓位（一次 AI 调用）。
+
+    candidates: 选股候选 [{symbol,name,industry,score,close,factors{...}}, ...]
+    holdings:   当前真实持仓 [{symbol,name,shares,close?}, ...]
+    cash:       可用现金
+    use_research/use_sentiment: 信息开放度开关（当前仅支持均为 False 的纯量化档）。
+    返回：解析后的仓位方案 dict（附 mode / fidelity / data_as_of 由调用方补充）。
+    """
+    if use_research or use_sentiment:
+        raise NotImplementedError("研报/舆情档尚未接入数据源，当前仅支持纯量化档")
+
+    def emit(m):
+        if progress:
+            progress(m)
+
+    emit(f"汇总 {len(candidates)} 只候选 + {len(holdings)} 只持仓的量化数据…")
+
+    # 估算总资产，便于主管换算权重
+    holdings_val = sum((h.get("close") or 0) * h.get("shares", 0) for h in holdings)
+    total_asset = cash + holdings_val
+
+    payload = {
+        "可用现金": round(cash, 2),
+        "当前持仓市值估算": round(holdings_val, 2),
+        "总资产估算": round(total_asset, 2),
+        "当前持仓": holdings,
+        "选股候选(含因子z分)": candidates,
+    }
+
+    emit("投资组合经理统筹今日仓位方案…")
+    resp = Generation.call(
+        model=config.ORCHESTRATOR_MODEL,
+        messages=[
+            {"role": "system", "content": PORTFOLIO_QUANT_SYSTEM},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ],
+        api_key=config.API_KEY,
+        max_tokens=3000,
+    )
+    if resp.status_code != 200:
+        raise Exception(f"阿里云 API 错误 {resp.status_code}: {resp.message}")
+
+    try:
+        plan = _strip_json(resp.output.text)
+    except (json.JSONDecodeError, IndexError) as e:
+        raise Exception(f"统筹方案解析失败（模型未返回合法 JSON）：{e}")
+    return plan
 
 
 if __name__ == "__main__":

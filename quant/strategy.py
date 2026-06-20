@@ -79,6 +79,37 @@ class RuleStrategy(PositionPolicy):
         return {s: weight for s in picked}
 
 
+@dataclass
+class AIStrategy(PositionPolicy):
+    """实盘"今日"用的 AI 统筹策略。一次 AI 调用产出目标仓位方案。
+
+    信息开放度开关(量化基底常开)：
+        use_research  额外读券商研报/评级(慢变量)
+        use_sentiment 额外读新闻/舆情(快变量)
+    两者都 False = 纯量化档(回测可信度最高，可与 RuleStrategy 对齐校准)。
+
+    刻意不实现 backtest 用的 select()——AI 不进回测热循环(核心架构原则)。
+    实盘统筹走 plan()，候选股的量化因子已算好，直接喂给主管。
+    """
+    use_research: bool = False
+    use_sentiment: bool = False
+
+    def select(self, scores, tradable, industries) -> dict[str, float]:
+        raise NotImplementedError(
+            "AIStrategy 不进回测热循环。回测请用 RuleStrategy；"
+            "实盘今日统筹请调用 plan()。")
+
+    def plan(self, candidates, holdings, cash, progress=None) -> dict:
+        # 延迟导入，避免把 dashscope 拉进轻量的回测路径
+        import orchestrator
+        return orchestrator.run_portfolio(
+            candidates, holdings, cash,
+            use_research=self.use_research,
+            use_sentiment=self.use_sentiment,
+            progress=progress,
+        )
+
+
 # 向后兼容别名：旧代码(app.py / backtest.py / run_backtest.py)仍可用 Strategy。
 # RuleStrategy 是规范名，Strategy 指向同一个类。
 Strategy = RuleStrategy

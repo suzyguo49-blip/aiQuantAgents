@@ -71,6 +71,17 @@
     .switch .base { color: #64748b; }
     .fidelity { font-size: 0.78rem; color: #64748b; }
     .fidelity b { color: #38bdf8; }
+
+    /* 统筹方案展示 */
+    .plan-head { display: flex; gap: 18px; flex-wrap: wrap; margin: 16px 0 10px; font-size: 0.85rem; }
+    .plan-head .chip { background: #0f1117; border: 1px solid #2d3148; border-radius: 8px; padding: 6px 12px; }
+    .plan-head .chip b { color: #38bdf8; }
+    .act { font-size: 0.74rem; padding: 2px 8px; border-radius: 6px; font-weight: 600; }
+    .act-建仓, .act-加仓 { color: #4ade80; border: 1px solid #4ade80; }
+    .act-持有 { color: #94a3b8; border: 1px solid #475569; }
+    .act-减仓, .act-清仓 { color: #f87171; border: 1px solid #f87171; }
+    .risk-note { margin-top: 12px; font-size: 0.82rem; color: #f59e0b; line-height: 1.6;
+      background: rgba(245,158,11,0.08); border: 1px solid #f59e0b; border-radius: 8px; padding: 10px 14px; }
   </style>
   <script src="/auth.js"></script>
   <script src="/owner.js"></script>
@@ -112,8 +123,7 @@
     </div>
   </div>
 
-  <div class="card preview">
-    <span class="soon">下一步接入</span>
+  <div class="card">
     <h2>② AI 今日统筹</h2>
     <div class="hint">
       读取上面你的真实持仓 + 现金 + 选股候选，由交易主管统筹出今日调仓方案（加/减/清/建仓）。
@@ -121,13 +131,15 @@
     </div>
     <div class="switches">
       <label class="switch"><input type="checkbox" checked disabled /> <span class="base">🧮 量化基底（常开）</span></label>
-      <label class="switch"><input type="checkbox" disabled /> 📄 研报</label>
-      <label class="switch"><input type="checkbox" disabled /> 📰 舆情</label>
+      <label class="switch"><input type="checkbox" id="sw-research" disabled /> 📄 研报<span class="base">（下一步接入）</span></label>
+      <label class="switch"><input type="checkbox" id="sw-sentiment" disabled /> 📰 舆情<span class="base">（下一步接入）</span></label>
     </div>
-    <div class="fidelity">当前组合：纯量化 · 回测可信度 <b>高</b></div>
+    <div class="fidelity" id="fidelity">当前组合：<b>纯量化</b> · 回测可信度 <b>高</b></div>
     <div class="toolbar">
-      <button disabled>🚀 生成今日统筹方案</button>
+      <button id="planBtn" onclick="generatePlan()">🚀 生成今日统筹方案</button>
+      <span class="status" id="planStatus"></span>
     </div>
+    <div id="planResult"></div>
   </div>
 
   <script>
@@ -183,6 +195,52 @@
           Number(data.cash).toLocaleString("zh-CN") + " 元", "ok");
         loadPortfolio();   // 重新拉取以补上名称
       } catch (e) { setStatus("请求失败：" + e.message, "error"); }
+    }
+
+    async function generatePlan() {
+      const btn = document.getElementById("planBtn");
+      const st = document.getElementById("planStatus");
+      const out = document.getElementById("planResult");
+      btn.disabled = true; out.innerHTML = "";
+      st.className = "status"; st.textContent = "AI 统筹中…（首次加载市场数据约 15 秒，请稍候）";
+      try {
+        const res = await fetch("/api/today/plan", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ use_research: false, use_sentiment: false }),
+        });
+        const data = await res.json();
+        if (!res.ok) { st.className = "status error"; st.textContent = "失败：" + (data.error || res.status); return; }
+        st.className = "status ok"; st.textContent = "统筹完成（信号日 " + data.data_as_of + "）";
+        renderPlan(data);
+      } catch (e) { st.className = "status error"; st.textContent = "请求失败：" + e.message; }
+      finally { btn.disabled = false; }
+    }
+
+    function renderPlan(d) {
+      const p = d.plan || {};
+      const allocs = p.allocations || [];
+      const rows = allocs.map(a => {
+        const act = a.action || "持有";
+        return `<tr>
+          <td>${a.symbol || ""}</td><td class="name">${a.name || ""}</td>
+          <td><span class="act act-${act}">${act}</span></td>
+          <td>${a.target_weight_pct != null ? a.target_weight_pct + "%" : "—"}</td>
+          <td class="name">${a.reason || ""}</td></tr>`;
+      }).join("");
+      const ind = p.industry_allocation || {};
+      const indStr = Object.entries(ind).map(([k, v]) => `${k} ${v}%`).join(" · ") || "—";
+      document.getElementById("planResult").innerHTML = `
+        <div class="plan-head">
+          <span class="chip">模式 <b>${d.mode}</b></span>
+          <span class="chip">回测可信度 <b>${d.fidelity}</b></span>
+          <span class="chip">总体风格 <b>${p.total_risk || "—"}</b></span>
+          <span class="chip">建议留现金 <b>${p.cash_reserve_pct != null ? p.cash_reserve_pct + "%" : "—"}</b></span>
+        </div>
+        <table><thead><tr><th>代码</th><th>名称</th><th>操作</th><th>目标仓位</th><th>依据</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        <div class="name" style="margin-top:8px;font-size:0.78rem;">行业配置：${indStr}</div>
+        ${p.risk_note ? `<div class="risk-note">⚠️ ${p.risk_note}</div>` : ""}
+        <div class="hint" style="margin-top:12px;">⚠️ AI 生成，仅供研究参考，不构成投资建议。请自行复核后再决策。</div>`;
     }
 
     loadPortfolio();
