@@ -137,8 +137,8 @@
     </div>
     <div class="switches">
       <label class="switch"><input type="checkbox" checked disabled /> <span class="base">🧮 量化基底（常开）</span></label>
-      <label class="switch"><input type="checkbox" id="sw-research" disabled /> 📄 研报<span class="base">（下一步接入）</span></label>
-      <label class="switch"><input type="checkbox" id="sw-sentiment" disabled /> 📰 舆情<span class="base">（下一步接入）</span></label>
+      <label class="switch"><input type="checkbox" id="sw-research" onchange="updateFidelity()" /> 📄 研报</label>
+      <label class="switch"><input type="checkbox" id="sw-sentiment" onchange="updateFidelity()" /> 📰 舆情</label>
     </div>
     <div class="fidelity" id="fidelity">当前组合：<b>纯量化</b> · 回测可信度 <b>高</b></div>
     <div class="toolbar">
@@ -227,16 +227,34 @@
       } catch (e) { setStatus("请求失败：" + e.message, "error"); }
     }
 
+    function modeOf(r, s) {
+      if (!r && !s) return ["纯量化", "高"];
+      if (r && !s) return ["量化+研报", "中"];
+      if (s && !r) return ["量化+舆情", "中低"];
+      return ["全量(量化+研报+舆情)", "低"];
+    }
+    function updateFidelity() {
+      const r = document.getElementById("sw-research").checked;
+      const s = document.getElementById("sw-sentiment").checked;
+      const [m, f] = modeOf(r, s);
+      document.getElementById("fidelity").innerHTML =
+        `当前组合：<b>${m}</b> · 回测可信度 <b>${f}</b>` +
+        (r || s ? `　<span style="color:#f59e0b">⚠️ 含联网信息，此组合无法用回测复现</span>` : "");
+    }
+
     async function generatePlan() {
       const btn = document.getElementById("planBtn");
       const st = document.getElementById("planStatus");
       const out = document.getElementById("planResult");
+      const r = document.getElementById("sw-research").checked;
+      const s = document.getElementById("sw-sentiment").checked;
       btn.disabled = true; out.innerHTML = "";
-      st.className = "status"; st.textContent = "AI 统筹中…（首次加载市场数据约 15 秒，请稍候）";
+      st.className = "status";
+      st.textContent = (r || s ? "联网检索 + " : "") + "AI 统筹中…（首次加载市场数据约 15 秒，请稍候）";
       try {
         const res = await fetch("/api/today/plan", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ use_research: false, use_sentiment: false }),
+          body: JSON.stringify({ use_research: r, use_sentiment: s }),
         });
         const data = await res.json();
         if (!res.ok) { st.className = "status error"; st.textContent = "失败：" + (data.error || res.status); return; }
@@ -269,6 +287,7 @@
         <table><thead><tr><th>代码</th><th>名称</th><th>操作</th><th>目标仓位</th><th>依据</th></tr></thead>
           <tbody>${rows}</tbody></table>
         <div class="name" style="margin-top:8px;font-size:0.78rem;">行业配置：${indStr}</div>
+        ${p.info_sources ? `<div class="name" style="margin-top:4px;font-size:0.78rem;">参考信息源：${p.info_sources}</div>` : ""}
         ${p.risk_note ? `<div class="risk-note">⚠️ ${p.risk_note}</div>` : ""}
         <div class="hint" style="margin-top:12px;">⚠️ AI 生成，仅供研究参考，不构成投资建议。请自行复核后再决策。</div>`;
     }

@@ -301,6 +301,17 @@ def portfolio_api():
     return jsonify(pf)
 
 
+def _portfolio_mode_label(use_research: bool, use_sentiment: bool) -> tuple[str, str]:
+    """信息开放度组合 -> (模式名, 回测可信度)。量化为基底常开。"""
+    if not use_research and not use_sentiment:
+        return "纯量化", "高"
+    if use_research and not use_sentiment:
+        return "量化+研报", "中"
+    if use_sentiment and not use_research:
+        return "量化+舆情", "中低"
+    return "全量(量化+研报+舆情)", "低"
+
+
 @app.route("/api/portfolio/ocr", methods=["POST"])
 def portfolio_ocr():
     """截图识别持仓（需管理员密钥）。只返回识别结果供前端确认，不直接保存。"""
@@ -329,8 +340,7 @@ def today_plan():
     data = request.get_json() or {}
     use_research = bool(data.get("use_research"))
     use_sentiment = bool(data.get("use_sentiment"))
-    if use_research or use_sentiment:
-        return jsonify({"error": "研报/舆情档尚未接入数据源，当前仅支持纯量化档"}), 400
+    mode, fidelity = _portfolio_mode_label(use_research, use_sentiment)
 
     pf = portfolio_store.load_portfolio()
     cash = float(pf.get("cash") or 0)
@@ -363,8 +373,8 @@ def today_plan():
         strat = AIStrategy(use_research=use_research, use_sentiment=use_sentiment)
         plan = strat.plan(sel["picks"], holdings, cash)
         return jsonify({
-            "mode": "纯量化",
-            "fidelity": "高",
+            "mode": mode,
+            "fidelity": fidelity,
             "data_as_of": md_day,
             "cash": cash,
             "plan": plan,
