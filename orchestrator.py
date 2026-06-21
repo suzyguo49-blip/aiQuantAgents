@@ -305,6 +305,156 @@ def _extract_sources(resp) -> list[dict]:
     return sources
 
 
+# ============ 次日交易策略（深度博弈 · 逐股多Agent + T+1 条件单）============
+
+_SIGNAL_CHIEF_SYSTEM = """你是一位 A股交易主管。基于各分析师结论与多空辩论，对该股给出"次日可执行"的交易信号。
+**只输出一个 JSON 对象**（不要任何解释文字、不要 markdown 代码围栏）：
+{
+  "bias": "看多/中性/看空",
+  "conviction": "高/中/低",
+  "buy_price": 数字,        // 建议买入触发价(结合技术面支撑位/现价，元)
+  "take_profit": 数字,      // 止盈目标价(元)
+  "stop_loss": 数字,        // 止损价(元)
+  "view": "一句话：多空博弈后的关键结论"
+}
+所有价格必须基于技术面给出的真实价位推导，保留 2 位小数。看空时 conviction 仍填看多信心(=低)。"""
+
+
+def run_trading_signal(symbol: str, name: str | None = None) -> dict:
+    """对单只股票跑完整多Agent博弈，返回结构化交易信号 dict。"""
+    if not name:
+        name = get_basic_info(symbol)["name"]
+
+    with ThreadPoolExecutor(max_workers=len(ANALYSTS)) as pool:
+        results = list(pool.map(lambda a: _run_analyst(a, symbol), ANALYSTS))
+    reports_text = "\n\n".join(f"【{n}】\n{text}" for n, text in results)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        bull = pool.submit(debate.bull_case, symbol, name, reports_text).result()
+        bear = pool.submit(debate.bear_case, symbol, name, reports_text).result()
+    debate_text = f"【多头观点】\n{bull}\n\n【空头观点】\n{bear}"
+
+    resp = Generation.call(
+        model=config.ORCHESTRATOR_MODEL,
+        messages=[
+            {"role": "system", "content": _SIGNAL_CHIEF_SYSTEM},
+            {"role": "user", "content": (
+                f"标的：{name}（{symbol}）\n\n"
+                f"=== 各维度分析师结论 ===\n{reports_text}\n\n"
+                f"=== 多空辩论 ===\n{debate_text}\n\n请给出次日交易信号 JSON。"
+            )},
+        ],
+        api_key=config.API_KEY,
+        max_tokens=1200,
+    )
+    if resp.status_code != 200:
+        raise Exception(f"阿里云 API 错误 {resp.status_code}: {resp.message}")
+    sig = _strip_json(resp.output.text)
+    sig["symbol"] = symbol
+    sig["name"] = name
+    return sig
+
+
+_DEEP_SYNTHESIS_SYSTEM = """你是一位严谨的 A股投资组合经理。下方给出：可用现金、当前持仓、以及每只股票经"多Agent多空博弈"得到的交易信号(买入价/止盈价/止损价/信心)。
+请统筹成一份"次日条件单计划"。
+
+【A股 T+1 铁律】
+- 当日买入的股票，当日不可卖出。
+- 既有持仓(current_shares>0)：次日可挂卖单(止盈/止损)。
+- 新建仓(current_shares=0)：次日只能挂买单；其止盈/止损是"买入成交后(T+2 起)"的目标，sell_timing 标注"今日买入·T+2起"。
+
+【交易单位】买入量、卖出量都用"手"(1 手=100 股)。买入总花费不超过可用现金。卖出手数不得超过现有持仓(current_shares/100)。
+【取舍】只对信心足够、风险可控的股给买入；对走弱/看空的既有持仓给卖出(减仓或清仓)；其余持有。
+
+**只输出一个 JSON 对象**（不要任何解释、不要围栏）：
+{
+  "total_risk": "保守/中性/积极 + 半句理由",
+  "cash_reserve_pct": 数字,
+  "orders": [
+    {
+      "symbol": "sh.600519", "name": "贵州茅台", "current_shares": 数字,
+      "action": "建仓/加仓/持有/减仓/清仓",
+      "buy":        {"price": 数字, "lots": 手数} 或 null,
+      "take_profit":{"price": 数字, "lots": 手数} 或 null,
+      "stop_loss":  {"price": 数字, "lots": 手数} 或 null,
+      "sell_timing": "次日可挂" 或 "今日买入·T+2起" 或 "",
+      "view": "一句话依据(引用博弈结论)"
+    }
+  ],
+  "risk_note": "1-2句最关键风险提示"
+}
+价格保留2位小数。既有持仓建议卖出时 action=减仓/清仓 并给 take_profit/stop_loss；新建仓 action=建仓 并给 buy。"""
+
+
+def run_deep_portfolio(candidates: list[dict], holdings: list[dict], cash: float,
+                       top_n: int = 5, progress=None) -> dict:
+    """次日交易策略(深度档)：Top-N 候选 + 持仓 逐股多Agent博弈 → 统筹成条件单计划。"""
+    def emit(m):
+        if progress:
+            progress(m)
+
+    # Top-N 候选 + 全部持仓，去重保序
+    seen, targets = set(), []
+    for c in candidates[:top_n] + holdings:
+        s = c["symbol"]
+        if s not in seen:
+            seen.add(s)
+            targets.append((s, c.get("name", s)))
+
+    signals = []
+    for i, (sym, nm) in enumerate(targets, 1):
+        emit(f"[{i}/{len(targets)}] 多Agent博弈：{nm}（技术/基本面/资金/风控 + 多空）…")
+        try:
+            signals.append(run_trading_signal(sym, nm))
+        except Exception as e:
+            signals.append({"symbol": sym, "name": nm, "error": str(e), "view": f"分析失败：{e}"})
+
+    emit("统筹 Agent 汇总成次日条件单计划…")
+    hold_map = {h["symbol"]: h for h in holdings}
+    payload = {
+        "可用现金": round(cash, 2),
+        "当前持仓": [{"symbol": h["symbol"], "name": h.get("name"),
+                   "current_shares": h.get("shares", 0), "现价": h.get("close")} for h in holdings],
+        "各股交易信号(多空博弈后)": [{
+            **{k: s.get(k) for k in ("symbol", "name", "bias", "conviction",
+                                     "buy_price", "take_profit", "stop_loss", "view")},
+            "current_shares": hold_map.get(s["symbol"], {}).get("shares", 0),
+        } for s in signals],
+    }
+    resp = Generation.call(
+        model=config.ORCHESTRATOR_MODEL,
+        messages=[
+            {"role": "system", "content": _DEEP_SYNTHESIS_SYSTEM},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ],
+        api_key=config.API_KEY,
+        max_tokens=3500,
+    )
+    if resp.status_code != 200:
+        raise Exception(f"阿里云 API 错误 {resp.status_code}: {resp.message}")
+    plan = _strip_json(_resp_text(resp))
+    plan["signals"] = signals          # 附原始逐股信号供展示
+    _sanitize_deep_plan(plan, hold_map)
+    return plan
+
+
+def _sanitize_deep_plan(plan: dict, hold_map: dict) -> None:
+    """安全校验：卖出手数不得超过现有持仓；T+1 时点标注兜底。"""
+    for o in plan.get("orders", []):
+        held = hold_map.get(o.get("symbol"), {}).get("shares", 0)
+        o["current_shares"] = held
+        held_lots = held // 100
+        for k in ("take_profit", "stop_loss"):
+            leg = o.get(k)
+            if leg and isinstance(leg, dict) and leg.get("lots") is not None:
+                # 次日可挂的卖单不能超过既有持仓手数
+                if held_lots > 0:
+                    leg["lots"] = min(int(leg["lots"]), held_lots)
+        # T+1 时点兜底
+        if not o.get("sell_timing"):
+            o["sell_timing"] = "今日买入·T+2起" if held == 0 and o.get("buy") else "次日可挂"
+
+
 if __name__ == "__main__":
     import sys
     from data_source import normalize_symbol

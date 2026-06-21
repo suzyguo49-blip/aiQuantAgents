@@ -469,6 +469,61 @@ def today_plan():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/today/deep-plan", methods=["POST"])
+def today_deep_plan():
+    """次日交易策略（深度档）：Top5候选+持仓逐股多Agent博弈→统筹条件单(含T+1)。流式。"""
+    gate = _admin_gate()
+    if gate:
+        return jsonify(gate[0]), gate[1]
+
+    data = request.get_json() or {}
+    top_n = int(data.get("top_n", 5))
+    pf = portfolio_store.load_portfolio()
+    cash = float(pf.get("cash") or 0)
+    weekly = journal_store.current_weights()
+    weights = data.get("weights") or weekly or {
+        k: v["default_weight"] for k, v in factors.FACTOR_LIBRARY.items() if v["default_weight"] > 0}
+
+    def generate():
+        q: queue.Queue = queue.Queue()
+
+        def worker():
+            try:
+                q.put(("progress", "因子选股中…（首次加载市场数据约 15 秒）"))
+                sel = _run_selection(weights, max(top_n, 10), None)
+                md_day = sel["as_of"]
+                md = _get_market_data(
+                    (pd.Timestamp(md_day) - pd.Timedelta(days=10)).strftime("%Y-%m-%d"), None)
+                closes = md.close.loc[md.dates[-1]]
+                covered = []
+                for h in pf.get("holdings", []):
+                    s = h["symbol"]
+                    c = closes.get(s)
+                    if c is not None and pd.notna(c):
+                        covered.append({"symbol": s, "name": md.names.get(s, s),
+                                        "shares": h["shares"], "close": round(float(c), 2)})
+                plan = orchestrator.run_deep_portfolio(
+                    sel["picks"], covered, cash, top_n=top_n,
+                    progress=lambda m: q.put(("progress", m)))
+                plan["data_as_of"] = md_day
+                plan["cash"] = cash
+                q.put(("result", plan))
+            except Exception as e:
+                q.put(("error", str(e)))
+            finally:
+                q.put(("done", None))
+
+        threading.Thread(target=worker, daemon=True).start()
+        while True:
+            kind, payload = q.get()
+            if kind == "done":
+                yield f"data: {json.dumps({'done': True})}\n\n"
+                break
+            yield f"data: {json.dumps({kind if kind != 'result' else 'plan': payload}, ensure_ascii=False)}\n\n"
+
+    return Response(stream_with_context(generate()), mimetype="text/event-stream")
+
+
 @app.route("/api/admin/stats")
 def admin_stats():
     """统计数据：今日各 IP 的 AI 调用记录。"""
