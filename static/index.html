@@ -15,6 +15,13 @@
     /* 首页特定 —— 仍遵循极简：细线、留白、单一强调色 */
     .hero { padding-bottom: 8px; }
     .hero .title { font-size: 2.4rem; }
+    .hero-row { display: flex; align-items: center; gap: 22px; }
+    .hero-avatar { flex-shrink: 0; width: 96px; height: 96px; border-radius: 50%;
+      object-fit: cover; border: 1px solid var(--line); }
+    @media (max-width: 640px) {
+      .hero-row { gap: 16px; }
+      .hero-avatar { width: 72px; height: 72px; }
+    }
     .tool { margin-top: 28px; }
     .tool .row { display: flex; gap: 12px; }
     .tool .row .input { flex: 1; }
@@ -70,9 +77,14 @@
 
     <!-- Hero -->
     <header class="hero">
-      <div class="eyebrow">SUSU 量化</div>
-      <h1 class="title">A股智能研究系统</h1>
-      <p class="subtitle">多因子选股 · 策略回测 · AI 仓位统筹，一个安静、专注的工作台。</p>
+      <div class="hero-row">
+        <img src="/avatar.png" alt="SUSU" class="hero-avatar" />
+        <div>
+          <div class="eyebrow">SUSU 量化</div>
+          <h1 class="title">A股智能研究系统</h1>
+          <p class="subtitle">多因子选股 · 策略回测 · AI 仓位统筹，一个安静、专注的工作台。</p>
+        </div>
+      </div>
       <nav class="nav">
         <a href="/" class="active">个股 AI 研究</a>
         <a href="/select">选股工作台</a>
