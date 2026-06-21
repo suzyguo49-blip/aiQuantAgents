@@ -210,9 +210,17 @@
         ]);
         const labelOf = k => (facs.find(f => f.key === k) || {}).label || k;
         const w = (jr && jr.current_weights) || null;
+        // 当前生效约束(回测调好后存进来的 top_k / rebalance_days / stop_loss_pct)
+        const wl = (jr && jr.weight_log || []);
+        const latest = wl.length ? wl[wl.length - 1] : {};
+        const cs = [];
+        if (latest.top_k) cs.push(`持仓数 <b>${latest.top_k}</b>`);
+        if (latest.rebalance_days) cs.push(`换仓周期 <b>${latest.rebalance_days}日</b>`);
+        if (latest.stop_loss_pct) cs.push(`止损 <b>${latest.stop_loss_pct}%</b>`);
+        const csLine = cs.length ? `<br>约束：${cs.join(" · ")} <span class="o-note">（来自策略回测）</span>` : "";
         if (w && Object.keys(w).length) {
           const list = Object.entries(w).map(([k, v]) => `${labelOf(k)} ${v}`).join(" · ");
-          box.innerHTML = `📌 本次将使用<b>本周组合</b>：${list}　<a href="/journal">改本周组合</a> · <a href="/backtest">去回测调</a>`;
+          box.innerHTML = `📌 本次将使用<b>本周组合</b>：${list}${csLine}<br><a href="/journal">查看周记</a> · <a href="/backtest">去回测调</a>`;
         } else {
           const def = facs.filter(f => f.default_weight > 0)
             .map(f => `${f.label} ${f.default_weight}`).join(" · ");
@@ -521,12 +529,25 @@
         const st = document.getElementById("planStatus");
         st.className = "status";
         st.innerHTML = `📂 显示 <b>${d.cached_at}</b> 已生成的方案（信号日 ${d.data_as_of}）。如要重跑，点 🚀。`;
-      } catch (e) { /* 静默,不影响主流程 */ }
+      } catch (e) {}
+    }
+    async function loadCachedDeep() {
+      try {
+        const res = await fetch("/api/today/deep-last");
+        if (!res.ok) return;
+        const d = await res.json();
+        if (d.none) return;
+        renderDeep(d.plan);
+        const st = document.getElementById("deepStatus");
+        st.className = "status";
+        st.innerHTML = `📂 显示 <b>${d.cached_at}</b> 已生成的深度方案。如要重跑，点 🎯（约几分钟）。`;
+      } catch (e) {}
     }
 
     loadPortfolio();
     loadActiveFactors();
     loadCachedPlan();
+    loadCachedDeep();
   </script>
 </body>
 </html>

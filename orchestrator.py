@@ -222,6 +222,7 @@ def run_portfolio(
     use_research: bool = False,
     use_sentiment: bool = False,
     progress=None,
+    constraints: dict | None = None,
 ) -> dict:
     """投资组合经理统筹今日仓位（一次 AI 调用）。
 
@@ -248,6 +249,13 @@ def run_portfolio(
         "当前持仓": holdings,
         "选股候选(含因子z分)": candidates,
     }
+    if constraints:
+        # 把策略回测带来的约束告诉 AI：止损硬约束、行业分散提示。换仓周期是日程层面的，不喂给单次决策。
+        cs = []
+        if constraints.get("stop_loss_pct") is not None:
+            cs.append(f"单票止损线 {constraints['stop_loss_pct']}%：建议持仓相对买入价回撤超过此值即清仓/减仓，对应给出的 risk_note 中要点名最接近止损的标的。")
+        if cs:
+            payload["本周策略约束(来自策略回测)"] = cs
 
     use_search = use_research or use_sentiment
     if use_search:

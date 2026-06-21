@@ -362,7 +362,12 @@ def journal_save_weights():
         return jsonify(gate[0]), gate[1]
     data = request.get_json() or {}
     try:
-        return jsonify(journal_store.save_weights(data.get("weights") or {}, data.get("note", "")))
+        return jsonify(journal_store.save_weights(
+            data.get("weights") or {}, data.get("note", ""),
+            top_k=data.get("top_k"),
+            rebalance_days=data.get("rebalance_days"),
+            stop_loss_pct=data.get("stop_loss_pct"),
+        ))
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
@@ -439,6 +444,20 @@ def today_last():
     })
 
 
+@app.route("/api/today/deep-last", methods=["GET"])
+def today_deep_last():
+    """返回今天最近一次的深度档方案(复原用),不触发 AI。"""
+    gate = _admin_gate()
+    if gate:
+        return jsonify(gate[0]), gate[1]
+    j = journal_store.load_journal()
+    today = date.today().isoformat()
+    snap = next((s for s in reversed(j.get("snapshots", [])) if s["date"] == today), None)
+    if not snap or not snap.get("deep_plan"):
+        return jsonify({"none": True})
+    return jsonify({"plan": snap["deep_plan"], "cached_at": snap["date"]})
+
+
 @app.route("/api/today/plan", methods=["POST"])
 def today_plan():
     """实盘今日：用真实持仓 + 现金 + 选股候选，由 AI 统筹出仓位方案（需管理员密钥）。"""
@@ -453,9 +472,9 @@ def today_plan():
 
     pf = portfolio_store.load_portfolio()
     cash = float(pf.get("cash") or 0)
-    top_k = int(data.get("top_k", 10))
     # 权重优先级：请求传入 > 周记里存的本周组合 > 因子库默认
     weekly = journal_store.current_weights()
+    constraints = journal_store.current_constraints()   # top_k / rebalance_days / stop_loss_pct
     if data.get("weights"):
         weights, weights_source = data["weights"], "自定义"
     elif weekly:
@@ -464,6 +483,8 @@ def today_plan():
         weights = {k: v["default_weight"]
                    for k, v in factors.FACTOR_LIBRARY.items() if v["default_weight"] > 0}
         weights_source = "默认因子"
+    # 持仓数:请求 > 本周约束 > 默认 10
+    top_k = int(data.get("top_k") or constraints.get("top_k") or 10)
 
     try:
         sel = _run_selection(weights, top_k, None)
@@ -487,7 +508,7 @@ def today_plan():
                 uncovered.append({"symbol": s, "shares": h["shares"]})
 
         strat = AIStrategy(use_research=use_research, use_sentiment=use_sentiment)
-        plan = strat.plan(sel["picks"], covered, cash)
+        plan = strat.plan(sel["picks"], covered, cash, constraints=constraints or None)
 
         # 把百分比方案翻译成可执行下单清单（真实现价 + 100股整手 + 实际现金）
         prices = {p["symbol"]: p["close"] for p in sel["picks"]}
@@ -575,6 +596,16 @@ def today_deep_plan():
                     progress=lambda m: q.put(("progress", m)))
                 plan["data_as_of"] = md_day
                 plan["cash"] = cash
+                # 写进周记 deep_plan(刷新/重开页面秒开,不再重跑这个 ~60 次调用的慢操作)
+                a_share_mv = sum(h["close"] * h["shares"] for h in covered)
+                journal_store.add_snapshot(
+                    round(cash + a_share_mv, 2), "深度档自动同步",
+                    cash=cash,
+                    holdings=[{"symbol": h["symbol"], "name": h["name"],
+                               "shares": h["shares"], "close": h["close"]} for h in covered],
+                )
+                journal_store.attach(date.today().isoformat(),
+                                     deep_plan=plan, deep_as_of=md_day)
                 q.put(("result", plan))
             except Exception as e:
                 q.put(("error", str(e)))

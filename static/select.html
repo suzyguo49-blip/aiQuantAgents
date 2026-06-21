@@ -202,7 +202,8 @@
       try {
         const res = await fetch("/api/journal/weights", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ weights, note: "来自选股工作台" }),
+          body: JSON.stringify({ weights, note: "来自选股工作台",
+          top_k: parseInt(document.getElementById("topk").value) || 10 }),
         });
         const d = await res.json();
         if (!res.ok) { s.className = "status error"; s.textContent = "保存失败：" + (d.error || res.status); return; }

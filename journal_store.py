@@ -41,14 +41,23 @@ def load_journal() -> dict:
     return _load()
 
 
-def save_weights(weights: dict, note: str = "") -> dict:
-    """保存本周因子权重(同一天重复保存则覆盖当天)。"""
+def save_weights(weights: dict, note: str = "",
+                 top_k: int | None = None,
+                 rebalance_days: int | None = None,
+                 stop_loss_pct: float | None = None) -> dict:
+    """保存本周因子权重 + 配套约束(持仓数/换仓周期/止损%)。同日覆盖。"""
     clean = {k: round(float(v), 3) for k, v in (weights or {}).items() if float(v) > 0}
     if not clean:
         raise ValueError("请至少设置一个正权重的因子")
     d = _load()
     today = date.today().isoformat()
     entry = {"date": today, "weights": clean, "note": (note or "").strip()}
+    if top_k is not None:
+        entry["top_k"] = int(top_k)
+    if rebalance_days is not None:
+        entry["rebalance_days"] = int(rebalance_days)
+    if stop_loss_pct is not None:
+        entry["stop_loss_pct"] = round(float(stop_loss_pct), 2)
     d["weight_log"] = [e for e in d["weight_log"] if e["date"] != today] + [entry]
     d["weight_log"].sort(key=lambda e: e["date"])
     _save(d)
@@ -59,6 +68,15 @@ def current_weights() -> dict | None:
     """今日策略要用的因子权重 = 最新一版日志；无则返回 None(调用方回退默认)。"""
     d = _load()
     return d["weight_log"][-1]["weights"] if d["weight_log"] else None
+
+
+def current_constraints() -> dict:
+    """返回当前生效的本周约束(top_k/rebalance_days/stop_loss_pct),没存过则空 dict。"""
+    d = _load()
+    if not d["weight_log"]:
+        return {}
+    e = d["weight_log"][-1]
+    return {k: e[k] for k in ("top_k", "rebalance_days", "stop_loss_pct") if k in e}
 
 
 def add_snapshot(total_asset, note: str = "", snap_date: str | None = None,

@@ -100,7 +100,8 @@ class AIStrategy(PositionPolicy):
             "AIStrategy 不进回测热循环。回测请用 RuleStrategy；"
             "实盘今日统筹请调用 plan()。")
 
-    def plan(self, candidates, holdings, cash, progress=None) -> dict:
+    def plan(self, candidates, holdings, cash, progress=None,
+             constraints: dict | None = None) -> dict:
         # 延迟导入，避免把 dashscope 拉进轻量的回测路径
         import orchestrator
         return orchestrator.run_portfolio(
@@ -108,6 +109,7 @@ class AIStrategy(PositionPolicy):
             use_research=self.use_research,
             use_sentiment=self.use_sentiment,
             progress=progress,
+            constraints=constraints,
         )
 
 

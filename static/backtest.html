@@ -200,16 +200,19 @@
       if (Object.keys(weights).length === 0) {
         s.className = "status error"; s.textContent = "请至少启用一个因子再保存。"; return;
       }
+      const top_k = parseInt(document.getElementById("topk").value) || 10;
+      const rebalance_days = parseInt(document.getElementById("reb").value) || 5;
+      const stop_loss_pct = parseFloat(document.getElementById("stop").value) || 10;
       s.className = "status"; s.textContent = "保存本周组合中…（需管理员密钥）";
       try {
         const res = await fetch("/api/journal/weights", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ weights, note: "来自策略回测" }),
+          body: JSON.stringify({ weights, note: "来自策略回测", top_k, rebalance_days, stop_loss_pct }),
         });
         const d = await res.json();
         if (!res.ok) { s.className = "status error"; s.textContent = "保存失败：" + (d.error || res.status); return; }
-        s.className = "status"; s.textContent = "✅ 已存为本周组合，今日策略将自动使用这组权重。";
-        if (confirm("已存为本周组合！\n今日策略会自动用这组因子权重。\n\n现在去「今日策略」生成方案吗？")) {
+        s.className = "status"; s.textContent = "✅ 已存为本周组合（含 持仓数/换仓周期/止损 约束），今日策略将自动套用。";
+        if (confirm(`已存为本周组合！\n• 因子权重\n• 持仓数 ${top_k}\n• 换仓周期 ${rebalance_days}日\n• 止损 ${stop_loss_pct}%\n\n今日策略会按这套约束生成方案。现在去「今日策略」吗？`)) {
           window.location.href = "/today";
         }
       } catch (e) { s.className = "status error"; s.textContent = "请求失败：" + e.message; }
