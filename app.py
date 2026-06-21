@@ -381,6 +381,23 @@ def journal_save_snapshot():
         return jsonify({"error": str(e)}), 400
 
 
+@app.route("/api/journal/snapshot/trades", methods=["POST"])
+def journal_save_trades():
+    """补记某日实际执行的交易(管理员)。"""
+    gate = _admin_gate()
+    if gate:
+        return jsonify(gate[0]), gate[1]
+    data = request.get_json() or {}
+    snap_date = (data.get("date") or "").strip()
+    trades = data.get("trades") or []
+    if not snap_date:
+        return jsonify({"error": "缺少 date"}), 400
+    try:
+        return jsonify(journal_store.update_trades(snap_date, trades))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
 @app.route("/api/journal/snapshot/ocr", methods=["POST"])
 def journal_snapshot_ocr():
     """截图识别总资产（需管理员密钥）。只返回识别结果供确认，不直接保存。"""
@@ -453,14 +470,23 @@ def today_plan():
             prices[h["symbol"]] = h["close"]
         orders = orders_mod.build_orders(plan, covered, cash, prices)
 
-        # 自动写当日总资产快照到周记（口径：现金+A股持仓市值估算；ETF/港股无价不算）
+        # 自动写当日完整快照(归因复盘用):资产+本日因子+持仓清单+策略输出+下单清单
         a_share_mv = sum(h["close"] * h["shares"] for h in covered)
         total_asset = round(cash + a_share_mv, 2)
         snapshot_note = "今日策略自动同步"
         if uncovered:
             snapshot_note += f"（不含 {len(uncovered)} 只 ETF/港股）"
         try:
-            journal_store.add_snapshot(total_asset, snapshot_note)
+            journal_store.add_snapshot(
+                total_asset, snapshot_note,
+                weights=weights, cash=cash,
+                holdings=[{"symbol": h["symbol"], "name": h["name"],
+                           "shares": h["shares"], "close": h["close"]} for h in covered],
+                plan={k: plan.get(k) for k in (
+                    "total_risk", "cash_reserve_pct", "allocations",
+                    "industry_allocation", "info_sources", "risk_note")},
+                orders=orders.get("orders", []) if isinstance(orders, dict) else [],
+            )
         except Exception:
             pass   # 写快照失败不应让方案生成失败
 

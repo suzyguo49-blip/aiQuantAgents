@@ -19,6 +19,16 @@
     .pos { color: #15803d; font-weight: 600; } .neg { color: #b91c1c; font-weight: 600; }
     .wtags { font-size: 0.78rem; color: var(--text-2); white-space: normal; }
     .empty { color: var(--text-3); text-align: center; padding: 18px; font-size: 0.85rem; }
+    h3.sub { font-size: 0.92rem; margin: 18px 0 8px; color: var(--text); font-weight: 600; }
+    .chip { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 4px 10px; font-size: 0.82rem; color: var(--text-2); }
+    .chip b { color: var(--text); }
+    .o-note { font-size: 0.78rem; color: var(--text-3); }
+    .o-cap { color: #92400e; }
+    .delrow { background: var(--bg); border: 1px solid var(--line-strong); color: var(--text-2);
+      border-radius: 6px; cursor: pointer; font-size: 0.75rem; padding: 4px 10px; }
+    .delrow:hover { border-color: #b91c1c; color: #b91c1c; }
+    td input, td select { width: 100%; padding: 6px 8px; background: var(--bg);
+      border: 1px solid var(--line-strong); border-radius: 6px; color: var(--text); }
   </style>
   <script src="/auth.js"></script>
   <script src="/owner.js"></script>
@@ -38,19 +48,21 @@
     </nav>
   </header>
 
-  <!-- ① 本周因子权重 -->
+  <!-- ① 本周因子组合（只读看板，编辑请去回测/选股页） -->
   <div class="card" style="margin-top:32px;">
-    <h2>① 本周因子组合</h2>
-    <div class="hint">
-      建议先在 <a href="/backtest" class="link">策略回测</a> 验证哪组权重历史表现好，再来这里定本周组合。
-      保存后，<b>今日策略会自动用这组权重</b>（重开服务也在）。同一天重复保存覆盖当天。
+    <h2>① 本周生效的因子组合</h2>
+    <div class="hint" id="currentWeightsBox">读取中…</div>
+    <div class="hint" style="margin-top:8px;">
+      要修改，请去 <a href="/backtest" class="link">策略回测</a> 或 <a href="/select" class="link">选股工作台</a>
+      调好后点「📌 存为本周组合」。<span class="o-note">（避免在多个地方调权重，统一从回测/选股页流出）</span>
     </div>
-    <div id="factorList"></div>
-    <div class="toolbar">
-      <div class="field"><label>备注（可选）</label><input id="wnote" type="text" placeholder="如：本周追半导体" style="width:220px"></div>
-      <button onclick="saveWeights()">💾 保存为本周组合</button>
+    <div class="toolbar" style="margin:0;">
+      <div class="field"><label>查看历史某一版（只读）</label>
+        <select id="weekSel" onchange="applyHistoricWeights()" style="min-width:300px"></select>
+      </div>
       <span class="status" id="wstatus"></span>
     </div>
+    <div id="histPreview" class="hint" style="margin-top:8px;display:none;"></div>
   </div>
 
   <!-- ② 总资产快照 -->
@@ -71,9 +83,24 @@
     </div>
   </div>
 
-  <!-- ③ 周记表 -->
+  <!-- ③ 每日完整快照(归因复盘核心) -->
   <div class="card">
-    <h2>③ 每周战绩 × 因子组合</h2>
+    <h2>③ 每日快照详情</h2>
+    <div class="hint">
+      生成今日策略时，系统会<b>自动归档当日的完整快照</b>：本日使用的因子组合、持仓清单、AI 策略输出、下单清单。
+      你还可以手动补记<b>当日实际执行的交易</b>，方便日后回看「AI 让做什么 vs 我实际做了什么」。
+    </div>
+    <div class="toolbar" style="margin:0 0 12px 0;">
+      <div class="field"><label>选择某一天</label>
+        <select id="daySel" onchange="renderSnap()" style="min-width:280px"></select>
+      </div>
+    </div>
+    <div id="snapDetail"></div>
+  </div>
+
+  <!-- ④ 周记表 -->
+  <div class="card">
+    <h2>④ 每周战绩 × 因子组合</h2>
     <div class="hint">
       ⚠️ 这是<b>整个账户的真实结果</b>（含你的实际操作、ETF/港股等），是实盘复盘日记，<b>不是因子组合的干净归因</b>——干净归因看回测。
     </div>
@@ -87,63 +114,15 @@
   </main>
 
   <script>
-    let FACTORS = [];
+    let FACTORS = [];   // 仅用于把 key 翻成中文标签
 
-    async function loadFactors() {
-      FACTORS = await (await fetch("/api/factors")).json();
-      document.getElementById("factorList").innerHTML = FACTORS.map(f => `
-        <div class="factor" id="row-${f.key}">
-          <input type="checkbox" onchange="syncRow('${f.key}');onWeight()" id="chk-${f.key}" />
-          <div><div class="fname">${f.label}</div><div class="fdesc">${f.desc}</div></div>
-          <input type="range" min="0" max="1" step="0.05" value="${f.default_weight}" id="rng-${f.key}" oninput="onWeight()" />
-          <div class="wval" id="wv-${f.key}">${f.default_weight.toFixed(2)}</div>
-        </div>`).join("");
+    async function loadFactorLabels() {
+      try { FACTORS = await (await fetch("/api/factors")).json(); } catch (e) {}
     }
-
-    function syncRow(k) {
-      const on = document.getElementById("chk-" + k).checked;
-      document.getElementById("row-" + k).classList.toggle("off", !on);
-      document.getElementById("rng-" + k).disabled = !on;
-    }
-    function onWeight() {
-      FACTORS.forEach(f => {
-        document.getElementById("wv-" + f.key).textContent =
-          parseFloat(document.getElementById("rng-" + f.key).value).toFixed(2);
-      });
-    }
-    function applyWeights(weights) {
-      FACTORS.forEach(f => {
-        const on = weights && (f.key in weights);
-        document.getElementById("chk-" + f.key).checked = !!on;
-        if (on) document.getElementById("rng-" + f.key).value = weights[f.key];
-        else document.getElementById("chk-" + f.key).checked = f.default_weight > 0;
-        if (!on && f.default_weight > 0) document.getElementById("rng-" + f.key).value = f.default_weight;
-        syncRow(f.key);
-      });
-      onWeight();
-    }
-    function collectWeights() {
-      const w = {};
-      FACTORS.forEach(f => {
-        if (document.getElementById("chk-" + f.key).checked)
-          w[f.key] = parseFloat(document.getElementById("rng-" + f.key).value);
-      });
-      return w;
-    }
-
-    async function saveWeights() {
-      const w = collectWeights();
-      const st = document.getElementById("wstatus");
-      if (Object.keys(w).length === 0) { st.className = "status error"; st.textContent = "至少选一个因子"; return; }
-      st.className = "status"; st.textContent = "保存中…";
-      const res = await fetch("/api/journal/weights", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ weights: w, note: document.getElementById("wnote").value }),
-      });
-      const d = await res.json();
-      if (!res.ok) { st.className = "status error"; st.textContent = "失败：" + (d.error || res.status); return; }
-      st.className = "status ok"; st.textContent = "✅ 已存为本周组合，今日策略将自动使用";
-      loadJournal();
+    function wtags(weights) {
+      if (!weights || !Object.keys(weights).length) return "—";
+      const labelOf = k => (FACTORS.find(f => f.key === k) || {}).label || k;
+      return Object.entries(weights).map(([k, v]) => `${labelOf(k)} ${v}`).join(" · ");
     }
 
     function ocrSnap(inp) {
@@ -185,43 +164,48 @@
       loadJournal();
     }
 
-    // 选中历史一版 → 套用到上方因子区(只读回顾,不会改你的"本周组合"，除非你再点保存)
+    let WEIGHT_LOG = [];   // 历史因子组合
+    let SNAPS = [];        // 每日快照(含策略输出/持仓/订单/交易)
+
+    // 选中历史下拉:只在 hint 区预览,不再尝试修改任何输入控件
     function applyHistoricWeights() {
       const sel = document.getElementById("weekSel");
+      const box = document.getElementById("histPreview");
       const idx = sel.value;
-      const target = idx === "" ? (WEIGHT_LOG[0]?.weights) : WEIGHT_LOG[+idx]?.weights;
-      if (target) applyWeights(target);
-      const note = idx === "" ? "已恢复显示当前生效的因子组合" :
-        `已展示 ${WEIGHT_LOG[+idx].date} 那一版（如要启用，点上方"保存为本周组合"）`;
-      const st = document.getElementById("wstatus");
-      st.className = "status"; st.textContent = note;
+      if (idx === "") { box.style.display = "none"; return; }
+      const w = WEIGHT_LOG[+idx];
+      box.style.display = "block";
+      box.innerHTML = `🗂 <b>${w.date}</b> 的因子组合：${wtags(w.weights)}` +
+        (w.note ? `<br><span class="o-note">备注：${w.note}</span>` : "") +
+        `<br><span class="o-note">如要启用，请去回测/选股页调成这组数值后点「📌 存为本周组合」</span>`;
     }
-
-    function wtags(weights) {
-      if (!weights) return "—";
-      const labelOf = k => (FACTORS.find(f => f.key === k) || {}).label || k;
-      return Object.entries(weights).map(([k, v]) => `${labelOf(k)} ${v}`).join(" · ");
-    }
-
-    let WEIGHT_LOG = [];   // 历史因子组合,用于下拉回顾
 
     async function loadJournal() {
       let d;
       try {
         const res = await fetch("/api/journal");
-        if (!res.ok) return;   // 未输管理员密钥时 owner.js 会弹窗
+        if (!res.ok) return;
         d = await res.json();
       } catch (e) { return; }
-      if (d.current_weights) applyWeights(d.current_weights);
 
-      // 历史因子组合下拉:倒序展示,选中=把权重套用到上面的因子区
+      // ① 本周生效:只读展示
+      document.getElementById("currentWeightsBox").innerHTML = d.current_weights
+        ? `🧮 当前生效：<b>${wtags(d.current_weights)}</b>`
+        : `🧮 还未保存过本周组合，今日策略会用<b>默认因子</b>`;
+
+      // 历史下拉(倒序)
       WEIGHT_LOG = (d.weight_log || []).slice().reverse();
       const sel = document.getElementById("weekSel");
-      sel.innerHTML = '<option value="">— 当前生效（最新一版）—</option>' +
-        WEIGHT_LOG.map((w, i) => {
-          const note = w.note ? ` · ${w.note}` : "";
-          return `<option value="${i}">${w.date}${note}</option>`;
-        }).join("");
+      sel.innerHTML = '<option value="">— 看历史某一版 —</option>' +
+        WEIGHT_LOG.map((w, i) => `<option value="${i}">${w.date}${w.note ? " · " + w.note : ""}</option>`).join("");
+
+      // ④ 每日快照详情
+      SNAPS = (d.snapshots || []).slice().reverse();   // 最新在前
+      const dsel = document.getElementById("daySel");
+      if (dsel) {
+        dsel.innerHTML = '<option value="">— 选择某一天看完整快照 —</option>' +
+          SNAPS.map((s, i) => `<option value="${i}">${s.date} · ${s.total_asset.toLocaleString("zh-CN")}元</option>`).join("");
+      }
 
       const wk = d.weekly || [];
       const el = document.getElementById("weeklyTable");
@@ -237,7 +221,96 @@
           <td>${w.n_snapshots}</td></tr>`).join("")}</tbody></table>`;
     }
 
-    (async () => { await loadFactors(); loadJournal(); })();
+    // 渲染选中日期的完整快照（因子/持仓/AI输出/下单清单/实际交易）
+    function renderSnap() {
+      const idx = document.getElementById("daySel").value;
+      const box = document.getElementById("snapDetail");
+      if (idx === "") { box.innerHTML = ""; return; }
+      const s = SNAPS[+idx];
+      const holdRows = (s.holdings || []).map(h =>
+        `<tr><td>${h.symbol}</td><td>${h.name || ""}</td><td>${h.shares}股 / ${Math.floor(h.shares/100)}手</td><td>${h.close || "—"}</td></tr>`
+      ).join("");
+      const allocRows = ((s.plan || {}).allocations || []).map(a =>
+        `<tr><td>${a.symbol || ""}</td><td>${a.name || ""}</td><td>${a.action || ""}</td>
+         <td>${a.target_weight_pct != null ? a.target_weight_pct + "%" : "—"}</td>
+         <td class="wtags">${a.reason || ""}</td></tr>`
+      ).join("");
+      const orderRows = (s.orders || []).map(o => {
+        const lots = Math.floor((o.shares || 0)/100);
+        return `<tr><td>${o.side === "买入" ? "买入" : "卖出"}</td><td>${o.symbol || ""}</td><td>${o.name || ""}</td>
+          <td>${lots} 手</td><td>${o.price || "—"}</td><td>${(o.amount||0).toLocaleString("zh-CN")}</td>
+          <td class="wtags">${o.note || ""}</td></tr>`;
+      }).join("");
+      const tradeRows = (s.trades || []).map((t, i) =>
+        tradeRowHtml(t, i)).join("");
+
+      box.innerHTML = `
+        <div class="plan-head" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
+          <span class="chip">日期 <b>${s.date}</b></span>
+          <span class="chip">总资产 <b>${s.total_asset.toLocaleString("zh-CN")}</b></span>
+          ${s.cash != null ? `<span class="chip">现金 <b>${s.cash.toLocaleString("zh-CN")}</b></span>` : ""}
+          ${s.weights ? `<span class="chip">本日因子 <b>${wtags(s.weights)}</b></span>` : ""}
+        </div>
+        ${s.note ? `<div class="hint">备注：${s.note}</div>` : ""}
+
+        ${holdRows ? `<h3 class="sub">持仓清单</h3>
+          <table><thead><tr><th>代码</th><th>名称</th><th>数量</th><th>收盘</th></tr></thead><tbody>${holdRows}</tbody></table>` : ""}
+
+        ${s.plan ? `<h3 class="sub">AI 策略输出</h3>
+          ${s.plan.total_risk ? `<div class="hint">总体：${s.plan.total_risk}</div>` : ""}
+          ${allocRows ? `<table><thead><tr><th>代码</th><th>名称</th><th>动作</th><th>目标仓位</th><th>依据</th></tr></thead><tbody>${allocRows}</tbody></table>` : ""}
+          ${s.plan.risk_note ? `<div class="hint o-cap">风险提示：${s.plan.risk_note}</div>` : ""}` : ""}
+
+        ${orderRows ? `<h3 class="sub">AI 下单清单</h3>
+          <table><thead><tr><th>方向</th><th>代码</th><th>名称</th><th>手数</th><th>价</th><th>金额</th><th>说明</th></tr></thead><tbody>${orderRows}</tbody></table>` : ""}
+
+        <h3 class="sub">📝 当日实际执行的交易（你手动补记）</h3>
+        <div class="hint">归因复盘最关键的一栏：AI 让做什么 vs 你实际做了什么 / 为什么偏离。</div>
+        <table><thead><tr><th>方向</th><th>代码</th><th>手数</th><th>价</th><th>说明</th><th></th></tr></thead>
+          <tbody id="tradeTbody">${tradeRows}</tbody></table>
+        <div class="toolbar" style="margin-top:8px;">
+          <button class="ghost" onclick="addTradeRow()">+ 添加一笔</button>
+          <button onclick="saveTrades('${s.date}')">💾 保存这天的交易记录</button>
+          <span class="status" id="tstatus"></span>
+        </div>`;
+    }
+
+    function tradeRowHtml(t = {}, i = "x") {
+      return `<tr>
+        <td><select class="tr-side"><option ${t.side==='buy'?'selected':''} value="buy">买入</option><option ${t.side==='sell'?'selected':''} value="sell">卖出</option></select></td>
+        <td><input type="text" class="tr-sym" value="${t.symbol||""}" placeholder="600519"></td>
+        <td><input type="number" class="tr-lots" value="${t.lots != null ? t.lots : ""}" placeholder="手数" min="0" step="1"></td>
+        <td><input type="number" class="tr-price" value="${t.price||""}" placeholder="成交价" step="0.01"></td>
+        <td><input type="text" class="tr-note" value="${t.note||""}" placeholder="原因/偏离说明"></td>
+        <td><button class="delrow" onclick="this.closest('tr').remove()">删除</button></td></tr>`;
+    }
+    function addTradeRow() {
+      const tb = document.getElementById("tradeTbody");
+      tb.insertAdjacentHTML("beforeend", tradeRowHtml());
+    }
+    async function saveTrades(day) {
+      const tbody = document.getElementById("tradeTbody");
+      const trades = [...tbody.querySelectorAll("tr")].map(tr => ({
+        side: tr.querySelector(".tr-side").value,
+        symbol: tr.querySelector(".tr-sym").value.trim(),
+        lots: parseInt(tr.querySelector(".tr-lots").value) || 0,
+        shares: (parseInt(tr.querySelector(".tr-lots").value) || 0) * 100,
+        price: parseFloat(tr.querySelector(".tr-price").value) || null,
+        note: tr.querySelector(".tr-note").value.trim(),
+      })).filter(t => t.symbol);
+      const st = document.getElementById("tstatus");
+      st.className = "status"; st.textContent = "保存中…";
+      const res = await fetch("/api/journal/snapshot/trades", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: day, trades }),
+      });
+      const d = await res.json();
+      if (!res.ok) { st.className = "status error"; st.textContent = "保存失败：" + (d.error || res.status); return; }
+      st.className = "status ok"; st.textContent = `✅ 已记录 ${trades.length} 笔实际交易`;
+      loadJournal();
+    }
+
+    (async () => { await loadFactorLabels(); loadJournal(); })();
   </script>
 </body>
 </html>

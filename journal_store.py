@@ -61,8 +61,21 @@ def current_weights() -> dict | None:
     return d["weight_log"][-1]["weights"] if d["weight_log"] else None
 
 
-def add_snapshot(total_asset, note: str = "", snap_date: str | None = None) -> dict:
-    """记录某日总资产快照(同日覆盖)。"""
+def add_snapshot(total_asset, note: str = "", snap_date: str | None = None,
+                 weights: dict | None = None,
+                 holdings: list | None = None,
+                 cash: float | None = None,
+                 plan: dict | None = None,
+                 orders: list | None = None,
+                 trades: list | None = None) -> dict:
+    """记录某日快照(同日覆盖)。包含归因复盘所需的完整信息：
+    weights  本日今日策略使用的因子组合
+    holdings 本日持仓清单 [{symbol,name,shares,close}]
+    cash     本日现金
+    plan     今日策略输出(allocations/total_risk/cash_reserve_pct)
+    orders   AI 给出的下单清单 [{symbol,name,side,action,price,shares,amount,note}]
+    trades   今日你实际执行的交易(手动输入或后续补) [{symbol,side,shares,price,reason}]
+    """
     try:
         ta = round(float(total_asset), 2)
     except (TypeError, ValueError):
@@ -72,10 +85,39 @@ def add_snapshot(total_asset, note: str = "", snap_date: str | None = None) -> d
     d = _load()
     day = snap_date or date.today().isoformat()
     entry = {"date": day, "total_asset": ta, "note": (note or "").strip()}
-    d["snapshots"] = [e for e in d["snapshots"] if e["date"] != day] + [entry]
+    if cash is not None:
+        entry["cash"] = round(float(cash), 2)
+    if weights:
+        entry["weights"] = weights
+    if holdings:
+        entry["holdings"] = holdings
+    if plan:
+        entry["plan"] = plan
+    if orders:
+        entry["orders"] = orders
+    if trades:
+        entry["trades"] = trades
+    # 同日合并:保留旧字段,新字段覆盖(允许逐步补:先存策略输出,再补实际交易)
+    old = next((e for e in d["snapshots"] if e["date"] == day), None)
+    if old:
+        old.update(entry)
+        entry = old
+    else:
+        d["snapshots"].append(entry)
     d["snapshots"].sort(key=lambda e: e["date"])
     _save(d)
     return entry
+
+
+def update_trades(snap_date: str, trades: list) -> dict:
+    """补记某日实际交易（在策略快照之外手动输入）。日期必须已有快照。"""
+    d = _load()
+    snap = next((e for e in d["snapshots"] if e["date"] == snap_date), None)
+    if not snap:
+        raise ValueError(f"该日尚无快照：{snap_date}")
+    snap["trades"] = trades or []
+    _save(d)
+    return snap
 
 
 def weekly_performance() -> list[dict]:
