@@ -453,6 +453,17 @@ def today_plan():
             prices[h["symbol"]] = h["close"]
         orders = orders_mod.build_orders(plan, covered, cash, prices)
 
+        # 自动写当日总资产快照到周记（口径：现金+A股持仓市值估算；ETF/港股无价不算）
+        a_share_mv = sum(h["close"] * h["shares"] for h in covered)
+        total_asset = round(cash + a_share_mv, 2)
+        snapshot_note = "今日策略自动同步"
+        if uncovered:
+            snapshot_note += f"（不含 {len(uncovered)} 只 ETF/港股）"
+        try:
+            journal_store.add_snapshot(total_asset, snapshot_note)
+        except Exception:
+            pass   # 写快照失败不应让方案生成失败
+
         return jsonify({
             "mode": mode,
             "fidelity": fidelity,
@@ -462,6 +473,7 @@ def today_plan():
             "plan": plan,
             "orders": orders,
             "uncovered": uncovered,
+            "snapshot": {"total_asset": total_asset, "note": snapshot_note},
         })
     except ValueError as e:
         return jsonify({"error": str(e)}), 400

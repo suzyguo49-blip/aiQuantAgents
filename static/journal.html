@@ -77,6 +77,11 @@
     <div class="hint">
       ⚠️ 这是<b>整个账户的真实结果</b>（含你的实际操作、ETF/港股等），是实盘复盘日记，<b>不是因子组合的干净归因</b>——干净归因看回测。
     </div>
+    <div class="toolbar" style="margin:0 0 12px 0;">
+      <div class="field"><label>查看某一版因子组合（历史）</label>
+        <select id="weekSel" onchange="applyHistoricWeights()" style="min-width:300px"></select>
+      </div>
+    </div>
     <div id="weeklyTable"></div>
   </div>
   </main>
@@ -180,11 +185,25 @@
       loadJournal();
     }
 
+    // 选中历史一版 → 套用到上方因子区(只读回顾,不会改你的"本周组合"，除非你再点保存)
+    function applyHistoricWeights() {
+      const sel = document.getElementById("weekSel");
+      const idx = sel.value;
+      const target = idx === "" ? (WEIGHT_LOG[0]?.weights) : WEIGHT_LOG[+idx]?.weights;
+      if (target) applyWeights(target);
+      const note = idx === "" ? "已恢复显示当前生效的因子组合" :
+        `已展示 ${WEIGHT_LOG[+idx].date} 那一版（如要启用，点上方"保存为本周组合"）`;
+      const st = document.getElementById("wstatus");
+      st.className = "status"; st.textContent = note;
+    }
+
     function wtags(weights) {
       if (!weights) return "—";
       const labelOf = k => (FACTORS.find(f => f.key === k) || {}).label || k;
       return Object.entries(weights).map(([k, v]) => `${labelOf(k)} ${v}`).join(" · ");
     }
+
+    let WEIGHT_LOG = [];   // 历史因子组合,用于下拉回顾
 
     async function loadJournal() {
       let d;
@@ -194,6 +213,15 @@
         d = await res.json();
       } catch (e) { return; }
       if (d.current_weights) applyWeights(d.current_weights);
+
+      // 历史因子组合下拉:倒序展示,选中=把权重套用到上面的因子区
+      WEIGHT_LOG = (d.weight_log || []).slice().reverse();
+      const sel = document.getElementById("weekSel");
+      sel.innerHTML = '<option value="">— 当前生效（最新一版）—</option>' +
+        WEIGHT_LOG.map((w, i) => {
+          const note = w.note ? ` · ${w.note}` : "";
+          return `<option value="${i}">${w.date}${note}</option>`;
+        }).join("");
 
       const wk = d.weekly || [];
       const el = document.getElementById("weeklyTable");

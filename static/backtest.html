@@ -121,26 +121,47 @@
     let lastResult = null;   // 存最近一次回测结果，供下载
     const pct = x => (x * 100).toFixed(2) + "%";
 
+    const LS_KEY = "susu_backtest_params";   // 浏览器本地记忆
+    const SCALAR_IDS = ["start", "end", "topk", "reb", "stop"];
+
     async function loadFactors() {
       FACTORS = await (await fetch("/api/factors")).json();
-      document.getElementById("factorList").innerHTML = FACTORS.map(f => `
-        <div class="factor" id="row-${f.key}">
-          <input type="checkbox" ${f.default_weight > 0 ? "checked" : ""}
+      const saved = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
+      const w = saved.weights || {};
+      document.getElementById("factorList").innerHTML = FACTORS.map(f => {
+        const has = f.key in w;
+        const on = has || (!Object.keys(w).length && f.default_weight > 0);
+        const val = has ? w[f.key] : f.default_weight;
+        return `<div class="factor" id="row-${f.key}">
+          <input type="checkbox" ${on ? "checked" : ""}
                  onchange="toggleFactor('${f.key}')" id="chk-${f.key}" />
           <div><div class="fname">${f.label}</div><div class="fdesc">${f.desc}</div></div>
-          <input type="range" min="0" max="1" step="0.05" value="${f.default_weight}"
-                 id="rng-${f.key}" oninput="onWeight()" />
-          <div class="wval" id="wv-${f.key}">${f.default_weight.toFixed(2)}</div>
-        </div>`).join("");
+          <input type="range" min="0" max="1" step="0.05" value="${val}"
+                 id="rng-${f.key}" oninput="onWeight();persist()" />
+          <div class="wval" id="wv-${f.key}">${(+val).toFixed(2)}</div>
+        </div>`;
+      }).join("");
       FACTORS.forEach(f => syncRow(f.key));
+      // 还原标量参数
+      SCALAR_IDS.forEach(id => { if (saved[id] != null) document.getElementById(id).value = saved[id]; });
+      if (saved.trim) document.getElementById("trim").checked = true;
+      // 任意标量变更都持久化
+      SCALAR_IDS.forEach(id => document.getElementById(id).addEventListener("input", persist));
+      document.getElementById("trim").addEventListener("change", persist);
       onWeight();
+    }
+
+    function persist() {
+      const data = { weights: collectWeights(), trim: document.getElementById("trim").checked };
+      SCALAR_IDS.forEach(id => data[id] = document.getElementById(id).value);
+      localStorage.setItem(LS_KEY, JSON.stringify(data));
     }
     function syncRow(key) {
       const on = document.getElementById("chk-" + key).checked;
       document.getElementById("row-" + key).classList.toggle("off", !on);
       document.getElementById("rng-" + key).disabled = !on;
     }
-    function toggleFactor(key) { syncRow(key); onWeight(); }
+    function toggleFactor(key) { syncRow(key); onWeight(); persist(); }
     function onWeight() {
       let sum = 0;
       FACTORS.forEach(f => {
