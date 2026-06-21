@@ -80,6 +80,10 @@
     .t1-timing { font-size: 0.72rem; color: var(--text-3); }
     .t1-timing.warn { color: #92400e; }
     .t1-view { color: var(--text-2); font-size: 0.8rem; white-space: normal; min-width: 220px; }
+    .verdict { font-size: 0.78rem; padding: 2px 8px; border-radius: 6px; font-weight: 600; border: 1px solid; }
+    .verdict-ok { color: #15803d; border-color: #86c8a0; }
+    .verdict-warn { color: #92400e; border-color: #fde68a; }
+    .verdict-no { color: #b91c1c; border-color: #e3a3a3; }
   </style>
   <script src="/auth.js"></script>
   <script src="/owner.js"></script>
@@ -153,14 +157,14 @@
     <div id="planResult"></div>
 
     <div class="deep-sep"></div>
-    <h2 style="font-size:0.95rem;margin-bottom:6px;">🎯 次日交易策略（深度博弈）</h2>
+    <h2 style="font-size:0.95rem;margin-bottom:6px;">🎯 下单清单 AI 复审（多Agent博弈）</h2>
     <div class="hint">
-      Top5 候选 + 你的持仓<b>逐股跑多 Agent 博弈</b>(技术/基本面/资金/风控 + 多空)，再由统筹 Agent 出
-      <b>次日条件单</b>：每只给买入价/量、止盈价/量、止损价/量，并遵守 <b>A股 T+1</b>(今日买入次日不可卖)。
-      <span class="o-cap">⚠️ 很慢很贵：约 50–60 次 AI 调用，需等几分钟。</span>
+      对上方<b>今日下单清单的每一笔交易</b>逐单复审：先对该股做多Agent博弈(技术/基本面/资金/风控 + 多空)，再由
+      复审主管判定这笔下单是否合理。<b>不再重新选股、不再独立出方案</b>，只是用 AI 的力量再审一遍。
+      <span class="o-cap">⚠️ 较慢:每只股约 7 次 AI 调用,清单 N 单约 N×7 次。</span>
     </div>
     <div class="toolbar">
-      <button id="deepBtn" onclick="deepPlan()">🎯 生成次日交易策略</button>
+      <button id="deepBtn" onclick="deepPlan()">🎯 复审今日下单清单</button>
       <span class="status" id="deepStatus"></span>
     </div>
     <ul class="agent-steps" id="deepSteps" style="margin-top:8px;"></ul>
@@ -453,35 +457,39 @@
       finally { btn.disabled = false; }
     }
 
-    function leg(l) { return l && l.price != null ? `${l.price} × ${l.lots}手` : "—"; }
-
     function renderDeep(p) {
-      const orders = p.orders || [];
-      const rows = orders.map(o => {
-        const warn = (o.sell_timing || "").indexOf("T+2") !== -1;
+      const reviews = p.reviews || [];
+      const rows = reviews.map(r => {
+        const v = r.review || {};
+        const verdict = v.verdict || "—";
+        const cls = verdict === "合理" ? "verdict-ok" : verdict === "反对" ? "verdict-no" : verdict === "有保留" ? "verdict-warn" : "";
+        const sideAction = `${r.side === "买入" ? "买" : "卖"} ${r.action || ""} ${Math.floor((r.shares || 0)/100)}手 @${r.price}`;
         return `<tr>
-          <td>${o.symbol}</td><td class="name">${o.name || ""}</td>
-          <td>${o.current_shares || 0}股</td>
-          <td><span class="act act-${o.action || "持有"}">${o.action || "持有"}</span></td>
-          <td class="t1-buy">${leg(o.buy)}</td>
-          <td class="t1-tp">${leg(o.take_profit)}</td>
-          <td class="t1-sl">${leg(o.stop_loss)}</td>
-          <td class="t1-timing ${warn ? "warn" : ""}">${o.sell_timing || ""}</td>
-          <td class="t1-view">${o.view || ""}</td></tr>`;
+          <td>${r.symbol}</td><td class="name">${r.name || ""}</td>
+          <td class="name">${sideAction}</td>
+          <td><span class="verdict ${cls}">${verdict}</span><br><span class="o-note">信心 ${v.confidence || "—"}</span></td>
+          <td class="t1-view">${v.agree_points || ""}</td>
+          <td class="t1-view o-cap">${v.concerns || ""}</td>
+          <td>${v.suggested_price != null ? v.suggested_price : "—"}${v.suggested_lots != null ? ` × ${v.suggested_lots}手` : ""}</td>
+          <td class="t1-tp">${v.take_profit != null ? v.take_profit : "—"}</td>
+          <td class="t1-sl">${v.stop_loss != null ? v.stop_loss : "—"}</td>
+        </tr>`;
       }).join("");
+      const counts = reviews.reduce((m, r) => {
+        const v = (r.review || {}).verdict || "—";
+        m[v] = (m[v] || 0) + 1; return m;
+      }, {});
+      const sum = Object.entries(counts).map(([k, n]) => `${k} ${n}`).join(" · ") || "—";
       document.getElementById("deepResult").innerHTML = `
         <div class="plan-head">
-          <span class="chip">总体风格 <b>${p.total_risk || "—"}</b></span>
-          <span class="chip">建议留现金 <b>${p.cash_reserve_pct != null ? p.cash_reserve_pct + "%" : "—"}</b></span>
+          <span class="chip">复审 <b>${reviews.length}</b> 单</span>
+          <span class="chip">判定汇总 <b>${sum}</b></span>
         </div>
-        <table><thead><tr><th>代码</th><th>名称</th><th>现持</th><th>动作</th>
-          <th>买入(价×手)</th><th>止盈(价×手)</th><th>止损(价×手)</th><th>卖出时点</th><th>博弈依据</th></tr></thead>
+        <div class="hint">📌 对今日下单清单的每笔决策做多Agent博弈复审，判定其是否合理。<b>反对</b> = 博弈结论与下单方向矛盾，建议慎重；<b>有保留</b> = 方向一致但有具体风险点；<b>合理</b> = 博弈支持下单。</div>
+        <table><thead><tr><th>代码</th><th>名称</th><th>原下单</th><th>判定</th>
+          <th>支持点</th><th>担心点</th><th>建议价×量</th><th>建议止盈</th><th>建议止损</th></tr></thead>
           <tbody>${rows}</tbody></table>
-        ${p.risk_note ? `<div class="risk-note">⚠️ ${p.risk_note}</div>` : ""}
-        <div class="hint" style="margin-top:10px;">
-          📌 <b>挂条件单提示</b>：标「次日可挂」的卖单(止盈/止损)可直接挂；标「今日买入·T+2起」的是新建仓，需等买入成交后(T+2)再挂卖单。
-          价格为参考触发价，请结合盘口自行确认。⚠️ AI 生成，不构成投资建议。
-        </div>`;
+        <div class="hint" style="margin-top:10px;">⚠️ AI 复审仅供参考。最终决策与挂单请自行复核盘口与基本面。</div>`;
     }
 
     // 以「手」为主单位展示数量（1 手 = 100 股）；零股兜底单独标注
@@ -540,7 +548,7 @@
         renderDeep(d.plan);
         const st = document.getElementById("deepStatus");
         st.className = "status";
-        st.innerHTML = `📂 显示 <b>${d.cached_at}</b> 已生成的深度方案。如要重跑，点 🎯（约几分钟）。`;
+        st.innerHTML = `📂 显示 <b>${d.cached_at}</b> 已完成的复审结果。如要重跑，点 🎯（耗时随清单单数而定）。`;
       } catch (e) {}
     }
 

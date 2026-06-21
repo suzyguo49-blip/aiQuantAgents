@@ -557,56 +557,29 @@ def today_plan():
 
 @app.route("/api/today/deep-plan", methods=["POST"])
 def today_deep_plan():
-    """次日交易策略（深度档）：Top5候选+持仓逐股多Agent博弈→统筹条件单(含T+1)。流式。"""
+    """深度档 = 对今日下单清单做 AI 复审：逐单做多Agent博弈 → 复审主管判定是否合理。流式。"""
     gate = _admin_gate()
     if gate:
         return jsonify(gate[0]), gate[1]
 
-    data = request.get_json() or {}
-    top_n = int(data.get("top_n", 5))
-    pf = portfolio_store.load_portfolio()
-    cash = float(pf.get("cash") or 0)
-    weekly = journal_store.current_weights()
-    weights = data.get("weights") or weekly or {
-        k: v["default_weight"] for k, v in factors.FACTOR_LIBRARY.items() if v["default_weight"] > 0}
+    # 必须先有今日策略快照(下单清单),否则没东西可复审
+    today = date.today().isoformat()
+    j = journal_store.load_journal()
+    snap = next((s for s in reversed(j.get("snapshots", [])) if s["date"] == today), None)
+    orders = (snap or {}).get("orders") or []
+    if not orders:
+        return jsonify({"error": "请先点🚀生成今日统筹方案(产生下单清单),再做深度复审"}), 400
 
     def generate():
         q: queue.Queue = queue.Queue()
 
         def worker():
             try:
-                q.put(("progress", "因子选股中…（首次加载市场数据约 15 秒）"))
-                sel = _run_selection(weights, max(top_n, 10), None)
-                md_day = sel["as_of"]
-                md = _get_market_data(
-                    (pd.Timestamp(md_day) - pd.Timedelta(days=10)).strftime("%Y-%m-%d"), None)
-                closes = md.close.loc[md.dates[-1]]
-                # 深度档:A股持仓全部纳入博弈(close 缺失时用 cost/0 兜底,不静默丢)
-                covered = []
-                for h in pf.get("holdings", []):
-                    s = h["symbol"]
-                    # 凡能拿到名字(在A股库里)的都进:close 缺失用 cost 兜底,再不行=0(让 AI 知道但不算市值)
-                    if s in md.names.index if hasattr(md.names, "index") else s in md.names:
-                        c = closes.get(s)
-                        price = float(c) if c is not None and pd.notna(c) else float(h.get("cost") or 0)
-                        covered.append({"symbol": s, "name": md.names.get(s, s),
-                                        "shares": h["shares"], "close": round(price, 2)})
-                plan = orchestrator.run_deep_portfolio(
-                    sel["picks"], covered, cash, top_n=top_n,
-                    progress=lambda m: q.put(("progress", m)))
-                plan["data_as_of"] = md_day
-                plan["cash"] = cash
-                # 写进周记 deep_plan(刷新/重开页面秒开,不再重跑这个 ~60 次调用的慢操作)
-                a_share_mv = sum(h["close"] * h["shares"] for h in covered)
-                journal_store.add_snapshot(
-                    round(cash + a_share_mv, 2), "深度档自动同步",
-                    cash=cash,
-                    holdings=[{"symbol": h["symbol"], "name": h["name"],
-                               "shares": h["shares"], "close": h["close"]} for h in covered],
-                )
-                journal_store.attach(date.today().isoformat(),
-                                     deep_plan=plan, deep_as_of=md_day)
-                q.put(("result", plan))
+                review = orchestrator.review_orders(
+                    orders, progress=lambda m: q.put(("progress", m)))
+                review["based_on_date"] = today
+                journal_store.attach(today, deep_plan=review, deep_as_of=today)
+                q.put(("result", review))
             except Exception as e:
                 q.put(("error", str(e)))
             finally:
