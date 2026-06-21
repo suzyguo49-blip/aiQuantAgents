@@ -414,6 +414,31 @@ def journal_snapshot_ocr():
         return jsonify({"error": f"识别失败：{e}"}), 500
 
 
+@app.route("/api/today/last", methods=["GET"])
+def today_last():
+    """返回今天最近一次生成的方案(从周记快照里复原),让页面打开就能看到。"""
+    gate = _admin_gate()
+    if gate:
+        return jsonify(gate[0]), gate[1]
+    j = journal_store.load_journal()
+    today = date.today().isoformat()
+    snap = next((s for s in reversed(j.get("snapshots", [])) if s["date"] == today), None)
+    if not snap or not snap.get("plan"):
+        return jsonify({"none": True})
+    return jsonify({
+        "cached_at": snap["date"],
+        "data_as_of": snap.get("data_as_of") or snap["date"],
+        "cash": snap.get("cash"),
+        "weights_source": "本周组合" if snap.get("weights") else "默认",
+        "mode": snap.get("mode") or "纯量化",
+        "fidelity": snap.get("fidelity") or "高",
+        "plan": snap.get("plan"),
+        "orders": {"orders": snap.get("orders", [])},
+        "uncovered": [],
+        "snapshot": {"total_asset": snap["total_asset"], "note": snap.get("note") or ""},
+    })
+
+
 @app.route("/api/today/plan", methods=["POST"])
 def today_plan():
     """实盘今日：用真实持仓 + 现金 + 选股候选，由 AI 统筹出仓位方案（需管理员密钥）。"""
@@ -477,16 +502,18 @@ def today_plan():
         if uncovered:
             snapshot_note += f"（不含 {len(uncovered)} 只 ETF/港股）"
         try:
-            journal_store.add_snapshot(
+            snap = journal_store.add_snapshot(
                 total_asset, snapshot_note,
                 weights=weights, cash=cash,
                 holdings=[{"symbol": h["symbol"], "name": h["name"],
                            "shares": h["shares"], "close": h["close"]} for h in covered],
                 plan={k: plan.get(k) for k in (
                     "total_risk", "cash_reserve_pct", "allocations",
-                    "industry_allocation", "info_sources", "risk_note")},
+                    "industry_allocation", "info_sources", "risk_note", "sources")},
                 orders=orders.get("orders", []) if isinstance(orders, dict) else [],
             )
+            # 复原 GET /api/today/last 需要的头部元信息
+            journal_store.attach(snap["date"], mode=mode, fidelity=fidelity, data_as_of=md_day)
         except Exception:
             pass   # 写快照失败不应让方案生成失败
 

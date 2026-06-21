@@ -109,6 +109,19 @@ def add_snapshot(total_asset, note: str = "", snap_date: str | None = None,
     return entry
 
 
+def attach(snap_date: str, **fields) -> dict:
+    """给某日快照追加任意字段(同 key 覆盖)，用于补头部元信息(mode/fidelity/data_as_of 等)。"""
+    d = _load()
+    snap = next((e for e in d["snapshots"] if e["date"] == snap_date), None)
+    if not snap:
+        raise ValueError(f"该日尚无快照：{snap_date}")
+    for k, v in fields.items():
+        if v is not None:
+            snap[k] = v
+    _save(d)
+    return snap
+
+
 def update_trades(snap_date: str, trades: list) -> dict:
     """补记某日实际交易（在策略快照之外手动输入）。日期必须已有快照。"""
     d = _load()

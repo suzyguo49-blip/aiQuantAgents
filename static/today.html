@@ -510,8 +510,23 @@
           金额按现价估算，未计佣金/印花税/滑点</div>`;
     }
 
+    // 打开页面就显示今天最近一次方案(如有),省得再等几十秒 AI 重跑
+    async function loadCachedPlan() {
+      try {
+        const res = await fetch("/api/today/last");
+        if (!res.ok) return;
+        const d = await res.json();
+        if (d.none) return;
+        renderPlan(d);
+        const st = document.getElementById("planStatus");
+        st.className = "status";
+        st.innerHTML = `📂 显示 <b>${d.cached_at}</b> 已生成的方案（信号日 ${d.data_as_of}）。如要重跑，点 🚀。`;
+      } catch (e) { /* 静默,不影响主流程 */ }
+    }
+
     loadPortfolio();
     loadActiveFactors();
+    loadCachedPlan();
   </script>
 </body>
 </html>
