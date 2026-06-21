@@ -533,13 +533,16 @@ def today_deep_plan():
                 md = _get_market_data(
                     (pd.Timestamp(md_day) - pd.Timedelta(days=10)).strftime("%Y-%m-%d"), None)
                 closes = md.close.loc[md.dates[-1]]
+                # 深度档:A股持仓全部纳入博弈(close 缺失时用 cost/0 兜底,不静默丢)
                 covered = []
                 for h in pf.get("holdings", []):
                     s = h["symbol"]
-                    c = closes.get(s)
-                    if c is not None and pd.notna(c):
+                    # 凡能拿到名字(在A股库里)的都进:close 缺失用 cost 兜底,再不行=0(让 AI 知道但不算市值)
+                    if s in md.names.index if hasattr(md.names, "index") else s in md.names:
+                        c = closes.get(s)
+                        price = float(c) if c is not None and pd.notna(c) else float(h.get("cost") or 0)
                         covered.append({"symbol": s, "name": md.names.get(s, s),
-                                        "shares": h["shares"], "close": round(float(c), 2)})
+                                        "shares": h["shares"], "close": round(price, 2)})
                 plan = orchestrator.run_deep_portfolio(
                     sel["picks"], covered, cash, top_n=top_n,
                     progress=lambda m: q.put(("progress", m)))
