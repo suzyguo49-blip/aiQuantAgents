@@ -185,6 +185,15 @@ _PORTFOLIO_TASK = """
   "info_sources": "本次实际参考了哪些信息源(量化/研报/舆情)",
   "risk_note": "1-2句最关键的风险提示"
 }
+
+【action 用词规则(严格遵守,不可混淆)】用户的"当前持仓"里有的视作"已持有"，否则视作"未持有"。
+- 未持有 + 目标>0 → action="建仓"
+- 已持有 + 目标>当前占比 → action="加仓"
+- 已持有 + 目标≈当前占比 → action="持有"
+- 已持有 + 目标<当前占比但>0 → action="减仓"
+- 已持有 + 目标=0 → action="清仓"
+违反上述规则的输出会被代码强制纠正，请直接给出符合规则的结果。
+
 所有 target_weight_pct 加上 cash_reserve_pct 应约等于 100。当前持有但你建议清仓的股票，也要列出且 action=清仓、target_weight_pct=0。"""
 
 
@@ -285,7 +294,38 @@ def run_portfolio(
         raise Exception(f"统筹方案解析失败（模型未返回合法 JSON）：{e}")
 
     plan["sources"] = _extract_sources(resp) if use_search else []
+    _sanitize_actions(plan, holdings, total_asset)
     return plan
+
+
+def _sanitize_actions(plan: dict, holdings: list[dict], total_asset: float) -> None:
+    """按真实持仓校正 allocations 的 action 用词,容错 AI 把'建仓'写成'加仓'等。"""
+    held_pct = {}    # symbol -> 当前占总资产百分比
+    held_set = set()
+    for h in holdings:
+        sym = h["symbol"]
+        held_set.add(sym)
+        if total_asset > 0:
+            held_pct[sym] = (h.get("close") or 0) * h.get("shares", 0) / total_asset * 100
+    for a in plan.get("allocations") or []:
+        sym = a.get("symbol")
+        target = float(a.get("target_weight_pct") or 0)
+        cur = held_pct.get(sym, 0)
+        held = sym in held_set
+        # 严格分类(目标占比和当前占比的 0.5% 内视为持平)
+        if not held:
+            correct = "建仓" if target > 0 else "持有"   # 不持有又目标=0 ≈ 不动,标"持有"占位
+        elif target <= 0:
+            correct = "清仓"
+        elif target > cur + 0.5:
+            correct = "加仓"
+        elif target < cur - 0.5:
+            correct = "减仓"
+        else:
+            correct = "持有"
+        if a.get("action") != correct:
+            # 静默纠正(用户态:页面不显示我们改过,但避免误导)
+            a["action"] = correct
 
 
 def _resp_text(resp) -> str:
