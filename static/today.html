@@ -165,8 +165,10 @@
     </div>
     <div class="toolbar">
       <button id="deepBtn" onclick="deepPlan()">🎯 复审今日下单清单</button>
+      <button class="ghost" onclick="exportCMS()">📋 导出招商条件单指令表</button>
       <span class="status" id="deepStatus"></span>
     </div>
+    <div id="cmsExport"></div>
     <ul class="agent-steps" id="deepSteps" style="margin-top:8px;"></ul>
     <div id="deepResult"></div>
   </div>
@@ -330,6 +332,7 @@
     }
 
     function renderPlan(d) {
+      window.__plan = d;   // 供导出招商条件单
       const p = d.plan || {};
       const allocs = p.allocations || [];
       const rows = allocs.map(a => {
@@ -457,7 +460,83 @@
       finally { btn.disabled = false; }
     }
 
+    // 把"下单清单 + AI复审"合成招商证券条件单指令表(买=现价, 卖=AI止盈/止损)
+    function buildCMSRows() {
+      const plan = window.__plan;
+      if (!plan || !plan.orders || !plan.orders.orders || plan.orders.orders.length === 0) {
+        alert("还没有今日下单清单。请先点 🚀 生成今日统筹方案。"); return null;
+      }
+      const orders = plan.orders.orders;
+      const reviews = (window.__review && window.__review.reviews) || [];
+      const revBySym = {};
+      reviews.forEach(r => { revBySym[r.symbol] = r.review || {}; });
+
+      const rows = [];
+      orders.forEach(o => {
+        const code = (o.symbol || "").replace(/^(sh|sz)\./, "");  // 招商填6位代码
+        const rv = revBySym[o.symbol] || {};
+        const verdict = rv.verdict ? `AI:${rv.verdict}` : "";
+        if (o.side === "买入") {
+          rows.push({
+            code, name: o.name, dir: "买入",
+            trig: `现价≤${o.price}`, price: o.price, shares: o.shares,
+            note: [o.note, verdict, rv.concerns].filter(Boolean).join(" | "),
+          });
+        } else {  // 卖出 → 用 AI 止盈 + 止损 各挂一条
+          const tp = rv.take_profit, sl = rv.stop_loss;
+          if (tp != null) rows.push({
+            code, name: o.name, dir: "卖出", trig: `现价≥${tp}（止盈）`,
+            price: tp, shares: o.shares, note: [o.note, "止盈", verdict].filter(Boolean).join(" | "),
+          });
+          if (sl != null) rows.push({
+            code, name: o.name, dir: "卖出", trig: `现价≤${sl}（止损）`,
+            price: sl, shares: o.shares, note: [o.note, "止损", verdict, rv.concerns].filter(Boolean).join(" | "),
+          });
+          if (tp == null && sl == null) rows.push({  // 复审没给价就用现价兜底
+            code, name: o.name, dir: "卖出", trig: `现价≤${o.price}`,
+            price: o.price, shares: o.shares,
+            note: [o.note, "复审未给止盈止损,用现价", verdict].filter(Boolean).join(" | "),
+          });
+        }
+      });
+      return rows;
+    }
+
+    function exportCMS() {
+      const rows = buildCMSRows();
+      if (!rows) return;
+      // ① 下载 CSV(招商手动设条件单时照抄)
+      const header = ["证券代码", "名称", "方向", "触发条件", "委托价", "数量(股)", "数量(手)", "有效期", "备注"];
+      const lines = [header.join(",")];
+      rows.forEach(r => lines.push([
+        r.code, `"${r.name || ""}"`, r.dir, r.trig, r.price, r.shares, Math.floor(r.shares/100),
+        "当日有效", `"${(r.note || "").replace(/"/g, "''")}"`,
+      ].join(",")));
+      const blob = new Blob(["﻿" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `招商条件单_${new Date().toISOString().slice(0,10)}.csv`;
+      a.click(); URL.revokeObjectURL(a.href);
+
+      // ② 页面也展示一张可对照的表(招商 App 里逐条照设)
+      const tr = rows.map(r => `<tr>
+        <td>${r.code}</td><td class="name">${r.name || ""}</td>
+        <td class="${r.dir === "买入" ? "o-buy" : "o-sell"}">${r.dir}</td>
+        <td>${r.trig}</td><td>${r.price}</td>
+        <td>${Math.floor(r.shares/100)}手<span class="o-note">(${r.shares}股)</span></td>
+        <td class="name">${r.note || ""}</td></tr>`).join("");
+      document.getElementById("cmsExport").innerHTML = `
+        <div class="orders-title" style="margin-top:16px;">📋 招商证券条件单指令表（CSV 已下载，也可照下表在 App 逐条设）</div>
+        <div class="hint">招商 App 路径：交易 → 智能交易/条件单 → 价格条件单。买入按现价触发；卖出已用 AI 止盈/止损价各挂一条。</div>
+        <table><thead><tr><th>代码</th><th>名称</th><th>方向</th><th>触发条件</th><th>委托价</th><th>数量</th><th>备注</th></tr></thead>
+          <tbody>${tr}</tbody></table>
+        <div class="hint o-cap" style="margin-top:8px;">⚠️ 触发价为参考,招商 App 里请结合实时盘口微调;数量已按整手。最终下单由你确认,AI 不构成投资建议。</div>`;
+      document.getElementById("deepStatus").className = "status ok";
+      document.getElementById("deepStatus").textContent = `已导出 ${rows.length} 条条件单指令`;
+    }
+
     function renderDeep(p) {
+      window.__review = p;   // 供导出招商条件单
       const reviews = p.reviews || [];
       const rows = reviews.map(r => {
         const v = r.review || {};
