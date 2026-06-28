@@ -48,8 +48,23 @@
     </nav>
   </header>
 
-  <!-- ① 本周因子组合（只读看板，编辑请去回测/选股页） -->
+  <!-- 交易铁律(注入今日统筹 + 下单复审) -->
   <div class="card" style="margin-top:32px;">
+    <h2>📋 我的交易铁律</h2>
+    <div class="hint">
+      一条一行,写你踩过的坑/纪律。<b>会注入到「今日统筹」和「下单复审」的 AI</b>,作为软约束(量化基底优先)。
+      精选 5–15 条最痛的最有效。例:「追高就亏,买入必须等回调」「止损 8% 更适合我」「单一行业别超 30%」。
+    </div>
+    <textarea id="lessons" rows="7" placeholder="- 追高就亏,买入必须等回调到 AI 建议买点&#10;- 止损 8% 比 10% 更适合我&#10;- 单一行业别超 30%&#10;- 财报季前一周不建仓"
+      style="width:100%;background:var(--bg);border:1px solid var(--line-strong);border-radius:var(--radius);color:var(--text);padding:11px 13px;font-size:0.9rem;line-height:1.7;font-family:inherit;outline:none;"></textarea>
+    <div class="toolbar" style="margin-top:10px;">
+      <button onclick="saveLessons()">💾 保存铁律</button>
+      <span class="status" id="lessonStatus"></span>
+    </div>
+  </div>
+
+  <!-- ① 本周因子组合（只读看板，编辑请去回测/选股页） -->
+  <div class="card">
     <h2>① 本周生效的因子组合</h2>
     <div class="hint" id="currentWeightsBox">读取中…</div>
     <div class="hint" style="margin-top:8px;">
@@ -133,6 +148,18 @@
     async function loadFactorLabels() {
       try { FACTORS = await (await fetch("/api/factors")).json(); } catch (e) {}
     }
+    async function saveLessons() {
+      const st = document.getElementById("lessonStatus");
+      st.className = "status"; st.textContent = "保存中…";
+      const res = await fetch("/api/journal/lessons", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lessons: document.getElementById("lessons").value }),
+      });
+      const d = await res.json();
+      if (!res.ok) { st.className = "status error"; st.textContent = "失败：" + (d.error || res.status); return; }
+      st.className = "status ok"; st.textContent = "✅ 已保存,今日统筹与下单复审将遵守";
+    }
+
     async function loadAttr() {
       const st = document.getElementById("attrStatus");
       const box = document.getElementById("attrResult");
@@ -232,6 +259,9 @@
         if (!res.ok) return;
         d = await res.json();
       } catch (e) { return; }
+
+      // 交易铁律回填
+      if (d.lessons != null) document.getElementById("lessons").value = d.lessons;
 
       // ① 本周生效:只读展示
       document.getElementById("currentWeightsBox").innerHTML = d.current_weights

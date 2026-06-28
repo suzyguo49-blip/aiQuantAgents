@@ -101,7 +101,7 @@ class AIStrategy(PositionPolicy):
             "实盘今日统筹请调用 plan()。")
 
     def plan(self, candidates, holdings, cash, progress=None,
-             constraints: dict | None = None) -> dict:
+             constraints: dict | None = None, lessons: str = "") -> dict:
         # 延迟导入，避免把 dashscope 拉进轻量的回测路径
         import orchestrator
         return orchestrator.run_portfolio(
@@ -110,6 +110,7 @@ class AIStrategy(PositionPolicy):
             use_sentiment=self.use_sentiment,
             progress=progress,
             constraints=constraints,
+            lessons=lessons,
         )
 
 

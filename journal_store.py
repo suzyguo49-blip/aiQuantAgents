@@ -127,6 +127,18 @@ def add_snapshot(total_asset, note: str = "", snap_date: str | None = None,
     return entry
 
 
+def get_lessons() -> str:
+    """用户手写的交易铁律(整段文本)。"""
+    return _load().get("lessons", "")
+
+
+def save_lessons(text: str) -> str:
+    d = _load()
+    d["lessons"] = (text or "").strip()
+    _save(d)
+    return d["lessons"]
+
+
 def attach(snap_date: str, **fields) -> dict:
     """给某日快照追加任意字段(同 key 覆盖)，用于补头部元信息(mode/fidelity/data_as_of 等)。"""
     d = _load()

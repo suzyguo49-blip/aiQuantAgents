@@ -363,7 +363,18 @@ def journal_get():
         "snapshots": j["snapshots"],
         "weekly": journal_store.weekly_performance(),
         "current_weights": journal_store.current_weights(),
+        "lessons": j.get("lessons", ""),
     })
+
+
+@app.route("/api/journal/lessons", methods=["POST"])
+def journal_save_lessons():
+    """保存用户交易铁律(管理员)。会注入今日统筹与下单复审的 AI prompt。"""
+    gate = _admin_gate()
+    if gate:
+        return jsonify(gate[0]), gate[1]
+    data = request.get_json() or {}
+    return jsonify({"lessons": journal_store.save_lessons(data.get("lessons", ""))})
 
 
 @app.route("/api/journal/weights", methods=["POST"])
@@ -542,7 +553,8 @@ def today_plan():
                 uncovered.append({"symbol": s, "shares": h["shares"]})
 
         strat = AIStrategy(use_research=use_research, use_sentiment=use_sentiment)
-        plan = strat.plan(sel["picks"], covered, cash, constraints=constraints or None)
+        plan = strat.plan(sel["picks"], covered, cash, constraints=constraints or None,
+                          lessons=journal_store.get_lessons())
 
         # 把百分比方案翻译成可执行下单清单（真实现价 + 100股整手 + 实际现金）
         prices = {p["symbol"]: p["close"] for p in sel["picks"]}
@@ -610,7 +622,8 @@ def today_deep_plan():
         def worker():
             try:
                 review = orchestrator.review_orders(
-                    orders, progress=lambda m: q.put(("progress", m)))
+                    orders, progress=lambda m: q.put(("progress", m)),
+                    lessons=journal_store.get_lessons())
                 review["based_on_date"] = today
                 journal_store.attach(today, deep_plan=review, deep_as_of=today)
                 q.put(("result", review))
