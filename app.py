@@ -398,6 +398,28 @@ def journal_save_snapshot():
         return jsonify({"error": str(e)}), 400
 
 
+@app.route("/api/journal/attribution", methods=["GET"])
+def journal_attribution():
+    """系统画像:用历史决策 + 数据库前向价格做归因(管理员)。"""
+    gate = _admin_gate()
+    if gate:
+        return jsonify(gate[0]), gate[1]
+    import attribution
+    horizon = int(request.args.get("horizon", attribution.HORIZON))
+    j = journal_store.load_journal()
+    snaps = j.get("snapshots", [])
+    if not snaps:
+        return jsonify({"none": True})
+    try:
+        start = (pd.Timestamp(min(s["date"] for s in snaps)) - pd.Timedelta(days=10)).strftime("%Y-%m-%d")
+        md = _get_market_data(start, None)
+        attr = attribution.attribute(j, md, horizon)
+        attr["summary_line"] = attribution.summary_line(attr)
+        return jsonify(_json_safe(attr))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/journal/snapshot/trades", methods=["POST"])
 def journal_save_trades():
     """补记某日实际执行的交易(管理员)。"""

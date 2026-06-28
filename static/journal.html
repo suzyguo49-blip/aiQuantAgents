@@ -83,9 +83,23 @@
     </div>
   </div>
 
-  <!-- ③ 每日完整快照(归因复盘核心) -->
+  <!-- ③ 系统画像(归因) -->
   <div class="card">
-    <h2>③ 每日快照详情</h2>
+    <h2>③ 我的系统画像（归因）</h2>
+    <div class="hint">
+      用历史决策 + 数据库前向价格,评价系统决策方向准不准（前向 <b>20</b> 交易日)。
+      <b>这是"决策方向对不对",不是你账户实际盈亏。</b>样本少时不可信,需积累。
+    </div>
+    <div class="toolbar" style="margin:0 0 12px;">
+      <button class="ghost" onclick="loadAttr()">📊 计算系统画像</button>
+      <span class="status" id="attrStatus"></span>
+    </div>
+    <div id="attrResult"></div>
+  </div>
+
+  <!-- ④ 每日完整快照(归因复盘核心) -->
+  <div class="card">
+    <h2>④ 每日快照详情</h2>
     <div class="hint">
       生成今日策略时，系统会<b>自动归档当日的完整快照</b>：本日使用的因子组合、持仓清单、AI 策略输出、下单清单。
       你还可以手动补记<b>当日实际执行的交易</b>，方便日后回看「AI 让做什么 vs 我实际做了什么」。
@@ -100,7 +114,7 @@
 
   <!-- ④ 周记表 -->
   <div class="card">
-    <h2>④ 每周战绩 × 因子组合</h2>
+    <h2>⑤ 每周战绩 × 因子组合</h2>
     <div class="hint">
       ⚠️ 这是<b>整个账户的真实结果</b>（含你的实际操作、ETF/港股等），是实盘复盘日记，<b>不是因子组合的干净归因</b>——干净归因看回测。
     </div>
@@ -119,6 +133,37 @@
     async function loadFactorLabels() {
       try { FACTORS = await (await fetch("/api/factors")).json(); } catch (e) {}
     }
+    async function loadAttr() {
+      const st = document.getElementById("attrStatus");
+      const box = document.getElementById("attrResult");
+      st.className = "status"; st.textContent = "计算中…（加载行情约 15 秒）";
+      try {
+        const res = await fetch("/api/journal/attribution");
+        const d = await res.json();
+        if (!res.ok) { st.className = "status error"; st.textContent = "失败：" + (d.error || res.status); return; }
+        if (d.none) { box.innerHTML = '<div class="empty">还没有决策快照,先在今日策略生成几次方案。</div>'; st.textContent = ""; return; }
+        st.className = "status ok"; st.textContent = `已评估 ${d.evaluated} 个决策（${d.pending} 个未到 ${d.horizon} 日,暂不计入）`;
+        const pct = x => x == null ? "—" : (x * 100).toFixed(1) + "%";
+        const rate = x => x == null ? "—" : (x * 100).toFixed(0) + "%";
+        const cls = x => x == null ? "" : (x >= 0 ? "pos" : "neg");
+        const ind = (d.by_industry || []).map(r =>
+          `<tr><td>${r.industry}</td><td>${r.n}</td><td class="${cls(r.avg_fwd)}">${pct(r.avg_fwd)}</td></tr>`).join("");
+        const combo = (d.by_combo || []).map(r =>
+          `<tr><td class="wtags">${r.combo}</td><td>${r.n}</td><td class="${cls(r.avg_fwd)}">${pct(r.avg_fwd)}</td></tr>`).join("");
+        box.innerHTML = `
+          ${d.evaluated === 0 ? '<div class="empty o-cap">所有决策都还没满 20 交易日,无法评价。过段时间再来。</div>' : ""}
+          <div class="toolbar" style="margin:0 0 14px;">
+            <span class="chip">建仓命中率 <b class="${cls((d.build.hit_rate||0)-0.5)}">${rate(d.build.hit_rate)}</b>（${d.build.n}单·均${pct(d.build.avg_fwd)}）</span>
+            <span class="chip">清仓命中率 <b class="${cls((d.clear.hit_rate||0)-0.5)}">${rate(d.clear.hit_rate)}</b>（${d.clear.n}单）</span>
+          </div>
+          ${ind ? `<div class="src-title">行业归因（按前向收益,差的在上)</div>
+            <table><thead><tr><th>行业</th><th>决策数</th><th>平均前向收益</th></tr></thead><tbody>${ind}</tbody></table>` : ""}
+          ${combo ? `<div class="src-title" style="margin-top:14px;">因子组合归因（买类)</div>
+            <table><thead><tr><th>因子组合</th><th>决策数</th><th>平均前向收益</th></tr></thead><tbody>${combo}</tbody></table>` : ""}
+          <div class="hint o-cap" style="margin-top:10px;">⚠️ 这是"决策方向对不对"(标的事后涨跌),非你账户实际盈亏;样本少时仅供参考。</div>`;
+      } catch (e) { st.className = "status error"; st.textContent = "请求失败：" + e.message; }
+    }
+
     function wtags(weights) {
       if (!weights || !Object.keys(weights).length) return "—";
       const labelOf = k => (FACTORS.find(f => f.key === k) || {}).label || k;
