@@ -1,6 +1,8 @@
 """回测绩效指标。"""
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pandas as pd
 
@@ -57,6 +59,9 @@ def performance(equity: pd.Series, benchmark: pd.Series | None = None) -> dict:
         if len(bench) >= 2:
             out["benchmark_return"] = bench.iloc[-1] / bench.iloc[0] - 1.0
             out["excess_return"] = total_return - out["benchmark_return"]
+    # 极短窗口(如只有1个收益点)会让 std 等为 NaN —— 非法 JSON,统一清成 0.0
+    out = {k: (0.0 if isinstance(v, float) and not math.isfinite(v) else v)
+           for k, v in out.items()}
     return out
 
 

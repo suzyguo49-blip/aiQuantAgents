@@ -1,5 +1,6 @@
 """Flask web 服务入口。"""
 import json
+import math
 import queue
 import threading
 from collections import defaultdict
@@ -127,6 +128,17 @@ def list_factors():
     ])
 
 
+def _json_safe(obj):
+    """递归把 NaN/Inf 换成 None —— 标准 JSON 不允许 NaN,否则前端 JSON.parse 会炸。"""
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    return obj
+
+
 def _run_selection(weights: dict, top_k: int, as_of: str | None) -> dict:
     """选股核心：因子打分 → top-N + 各因子拆解。供 /api/select 与今日统筹共用。"""
     cfg = factors.build_factor_config(weights)
@@ -204,7 +216,7 @@ def backtest():
         if factor_config:
             strat.factor_config = factor_config
         result = Backtester(md, strat, initial_capital=1_000_000).run(start, end)
-        return jsonify(result.to_dict())
+        return jsonify(_json_safe(result.to_dict()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
